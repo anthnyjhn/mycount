@@ -1,0 +1,374 @@
+"""MyCount - a very simple tool to track business growth."""
+import os
+import sqlite3
+from datetime import date, timedelta
+
+from flask import Flask, g, redirect, render_template, request, url_for, flash
+
+DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(__file__), "data", "mycount.db"))
+
+MONTHS = ["January", "February", "March", "April", "May", "June", "July",
+          "August", "September", "October", "November", "December"]
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS customers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    address TEXT DEFAULT '',
+    phone TEXT DEFAULT '',
+    email TEXT DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS suppliers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    address TEXT DEFAULT '',
+    store_link TEXT DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS sales (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_name TEXT NOT NULL,
+    product_name TEXT NOT NULL,
+    qty REAL NOT NULL DEFAULT 1,
+    amount REAL NOT NULL DEFAULT 0,
+    total REAL NOT NULL DEFAULT 0,
+    date TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS purchases (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    supplier_name TEXT NOT NULL,
+    product TEXT NOT NULL,
+    amount REAL NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'unpaid',
+    date TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+"""
+
+DEFAULT_SETTINGS = {
+    "business_name": "My Business",
+    "currency": "₱",
+    "fy_start_month": "1",
+}
+
+app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "change-me-in-docker-compose")
+
+
+# ---------- database helpers ----------
+
+def get_db():
+    if "db" not in g:
+        g.db = sqlite3.connect(DB_PATH)
+        g.db.row_factory = sqlite3.Row
+    return g.db
+
+
+@app.teardown_appcontext
+def close_db(_exc):
+    db = g.pop("db", None)
+    if db is not None:
+        db.close()
+
+
+def init_db():
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    db = sqlite3.connect(DB_PATH)
+    db.executescript(SCHEMA)
+    for key, value in DEFAULT_SETTINGS.items():
+        db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, value))
+    db.commit()
+    db.close()
+
+
+def get_settings():
+    rows = get_db().execute("SELECT key, value FROM settings").fetchall()
+    settings = dict(DEFAULT_SETTINGS)
+    settings.update({r["key"]: r["value"] for r in rows})
+    return settings
+
+
+@app.context_processor
+def inject_globals():
+    settings = get_settings()
+    return {"settings": settings, "money": lambda v: f"{'-' if v < 0 else ''}{settings['currency']}{abs(v):,.2f}"}
+
+
+@app.template_filter("qty")
+def format_qty(value):
+    """Show 3 instead of 3.0, but keep 2.5 as 2.5."""
+    return f"{round(value, 2):g}"
+
+
+def to_number(value, default=0.0):
+    try:
+        return float(str(value).replace(",", "").strip())
+    except ValueError:
+        return default
+
+
+def form_text(name):
+    return request.form.get(name, "").strip()
+
+
+# ---------- financial year ----------
+
+def fy_range(start_year, start_month):
+    """Return (first_day, last_day, label) of the financial year that starts in start_year."""
+    first = date(start_year, start_month, 1)
+    if start_month == 1:
+        last = date(start_year, 12, 31)
+        label = str(start_year)
+    else:
+        last = date(start_year + 1, start_month, 1) - timedelta(days=1)
+        label = f"{start_year}-{start_year + 1}"
+    return first, last, label
+
+
+def current_fy_start_year(start_month):
+    today = date.today()
+    return today.year if today.month >= start_month else today.year - 1
+
+
+# ---------- dashboard ----------
+
+@app.route("/")
+def dashboard():
+    db = get_db()
+    start_month = int(get_settings()["fy_start_month"])
+    year = request.args.get("year", type=int) or current_fy_start_year(start_month)
+    first, last, label = fy_range(year, start_month)
+    params = (first.isoformat(), last.isoformat())
+
+    income = db.execute("SELECT COALESCE(SUM(total), 0) FROM sales WHERE date BETWEEN ? AND ?", params).fetchone()[0]
+    expenses = db.execute("SELECT COALESCE(SUM(amount), 0) FROM purchases WHERE date BETWEEN ? AND ?", params).fetchone()[0]
+    unpaid = db.execute(
+        "SELECT COALESCE(SUM(amount), 0), COUNT(*) FROM purchases WHERE status = 'unpaid' AND date BETWEEN ? AND ?",
+        params).fetchone()
+
+    # Month by month numbers for the little chart
+    months = []
+    for i in range(12):
+        m = (start_month - 1 + i) % 12 + 1
+        y = year if m >= start_month else year + 1
+        prefix = f"{y:04d}-{m:02d}"
+        m_in = db.execute("SELECT COALESCE(SUM(total), 0) FROM sales WHERE substr(date, 1, 7) = ?", (prefix,)).fetchone()[0]
+        m_out = db.execute("SELECT COALESCE(SUM(amount), 0) FROM purchases WHERE substr(date, 1, 7) = ?", (prefix,)).fetchone()[0]
+        months.append({"name": MONTHS[m - 1][:3], "year": y, "income": m_in, "expenses": m_out})
+    biggest = max([1] + [max(mo["income"], mo["expenses"]) for mo in months])
+
+    # Years that have data, so the year picker only shows useful choices
+    years = {current_fy_start_year(start_month)}
+    for table in ("sales", "purchases"):
+        for row in db.execute(f"SELECT DISTINCT date FROM {table}"):
+            d = date.fromisoformat(row[0])
+            years.add(d.year if d.month >= start_month else d.year - 1)
+    year_choices = [(y, fy_range(y, start_month)[2]) for y in sorted(years, reverse=True)]
+
+    top_products = db.execute(
+        "SELECT product_name, SUM(qty) AS qty, SUM(total) AS total FROM sales "
+        "WHERE date BETWEEN ? AND ? GROUP BY product_name ORDER BY total DESC LIMIT 5", params).fetchall()
+
+    return render_template(
+        "dashboard.html", income=income, expenses=expenses, profit=income - expenses,
+        unpaid_amount=unpaid[0], unpaid_count=unpaid[1], months=months, biggest=biggest,
+        year=year, label=label, first=first, last=last, year_choices=year_choices,
+        top_products=top_products)
+
+
+# ---------- sales ----------
+
+@app.route("/sales", methods=["GET", "POST"])
+@app.route("/sales/<int:item_id>/edit", methods=["GET", "POST"])
+def sales(item_id=None):
+    db = get_db()
+    editing = db.execute("SELECT * FROM sales WHERE id = ?", (item_id,)).fetchone() if item_id else None
+    if request.method == "POST":
+        customer, product = form_text("customer_name"), form_text("product_name")
+        qty = to_number(request.form.get("qty"), 1)
+        amount = to_number(request.form.get("amount"))
+        sale_date = form_text("date") or date.today().isoformat()
+        if not customer or not product:
+            flash("Please type the customer name and the product name.", "error")
+        else:
+            values = (customer, product, qty, amount, round(qty * amount, 2), sale_date)
+            if editing:
+                db.execute("UPDATE sales SET customer_name=?, product_name=?, qty=?, amount=?, total=?, date=? "
+                           "WHERE id=?", values + (item_id,))
+                flash("Sale updated! ✅", "ok")
+            else:
+                db.execute("INSERT INTO sales (customer_name, product_name, qty, amount, total, date) "
+                           "VALUES (?, ?, ?, ?, ?, ?)", values)
+                flash("Sale saved! 🎉", "ok")
+            db.commit()
+            return redirect(url_for("sales"))
+
+    q = request.args.get("q", "").strip()
+    rows = db.execute(
+        "SELECT * FROM sales WHERE customer_name LIKE ? OR product_name LIKE ? ORDER BY date DESC, id DESC",
+        (f"%{q}%", f"%{q}%")).fetchall()
+    customers = db.execute("SELECT name FROM customers ORDER BY name").fetchall()
+    return render_template("sales.html", rows=rows, customers=customers, editing=editing, q=q,
+                           today=date.today().isoformat())
+
+
+@app.post("/sales/<int:item_id>/delete")
+def delete_sale(item_id):
+    db = get_db()
+    db.execute("DELETE FROM sales WHERE id = ?", (item_id,))
+    db.commit()
+    flash("Sale deleted. 🗑️", "ok")
+    return redirect(url_for("sales"))
+
+
+# ---------- purchases ----------
+
+@app.route("/purchases", methods=["GET", "POST"])
+@app.route("/purchases/<int:item_id>/edit", methods=["GET", "POST"])
+def purchases(item_id=None):
+    db = get_db()
+    editing = db.execute("SELECT * FROM purchases WHERE id = ?", (item_id,)).fetchone() if item_id else None
+    if request.method == "POST":
+        supplier, product = form_text("supplier_name"), form_text("product")
+        amount = to_number(request.form.get("amount"))
+        status = "paid" if request.form.get("status") == "paid" else "unpaid"
+        buy_date = form_text("date") or date.today().isoformat()
+        if not supplier or not product:
+            flash("Please type the supplier name and the product.", "error")
+        else:
+            values = (supplier, product, amount, status, buy_date)
+            if editing:
+                db.execute("UPDATE purchases SET supplier_name=?, product=?, amount=?, status=?, date=? WHERE id=?",
+                           values + (item_id,))
+                flash("Purchase updated! ✅", "ok")
+            else:
+                db.execute("INSERT INTO purchases (supplier_name, product, amount, status, date) VALUES (?, ?, ?, ?, ?)",
+                           values)
+                flash("Purchase saved! 🎉", "ok")
+            db.commit()
+            return redirect(url_for("purchases"))
+
+    q = request.args.get("q", "").strip()
+    show = request.args.get("show", "all")
+    sql = "SELECT * FROM purchases WHERE (supplier_name LIKE ? OR product LIKE ?)"
+    args = [f"%{q}%", f"%{q}%"]
+    if show in ("paid", "unpaid"):
+        sql += " AND status = ?"
+        args.append(show)
+    rows = db.execute(sql + " ORDER BY date DESC, id DESC", args).fetchall()
+    suppliers = db.execute("SELECT name FROM suppliers ORDER BY name").fetchall()
+    return render_template("purchases.html", rows=rows, suppliers=suppliers, editing=editing, q=q, show=show,
+                           today=date.today().isoformat())
+
+
+@app.post("/purchases/<int:item_id>/toggle")
+def toggle_purchase(item_id):
+    db = get_db()
+    db.execute("UPDATE purchases SET status = CASE status WHEN 'paid' THEN 'unpaid' ELSE 'paid' END WHERE id = ?",
+               (item_id,))
+    db.commit()
+    return redirect(request.referrer or url_for("purchases"))
+
+
+@app.post("/purchases/<int:item_id>/delete")
+def delete_purchase(item_id):
+    db = get_db()
+    db.execute("DELETE FROM purchases WHERE id = ?", (item_id,))
+    db.commit()
+    flash("Purchase deleted. 🗑️", "ok")
+    return redirect(url_for("purchases"))
+
+
+# ---------- customers & suppliers ----------
+
+PEOPLE = {
+    "customers": {"title": "Customers", "one": "customer", "icon": "🧑", "fields": [
+        ("name", "Name", "text"), ("address", "Address", "text"),
+        ("phone", "Phone", "tel"), ("email", "Email", "email")]},
+    "suppliers": {"title": "Suppliers", "one": "supplier", "icon": "🏭", "fields": [
+        ("name", "Name", "text"), ("address", "Address", "text"),
+        ("store_link", "Store link", "url")]},
+}
+
+
+def people_page(kind, item_id=None):
+    db = get_db()
+    info = PEOPLE[kind]
+    columns = [f[0] for f in info["fields"]]
+    editing = db.execute(f"SELECT * FROM {kind} WHERE id = ?", (item_id,)).fetchone() if item_id else None
+    if request.method == "POST":
+        values = [form_text(c) for c in columns]
+        if not values[0]:
+            flash(f"Please type the {info['one']}'s name.", "error")
+        else:
+            if editing:
+                sets = ", ".join(f"{c} = ?" for c in columns)
+                db.execute(f"UPDATE {kind} SET {sets} WHERE id = ?", values + [item_id])
+                flash(f"{info['one'].title()} updated! ✅", "ok")
+            else:
+                db.execute(f"INSERT INTO {kind} ({', '.join(columns)}) VALUES ({', '.join('?' * len(columns))})",
+                           values)
+                flash(f"{info['one'].title()} added! 🎉", "ok")
+            db.commit()
+            return redirect(url_for(kind))
+    q = request.args.get("q", "").strip()
+    rows = db.execute(f"SELECT * FROM {kind} WHERE name LIKE ? ORDER BY name", (f"%{q}%",)).fetchall()
+    return render_template("people.html", kind=kind, info=info, rows=rows, editing=editing, q=q)
+
+
+def people_delete(kind, item_id):
+    db = get_db()
+    db.execute(f"DELETE FROM {kind} WHERE id = ?", (item_id,))
+    db.commit()
+    flash(f"{PEOPLE[kind]['one'].title()} deleted. 🗑️", "ok")
+    return redirect(url_for(kind))
+
+
+@app.route("/customers", methods=["GET", "POST"])
+@app.route("/customers/<int:item_id>/edit", methods=["GET", "POST"])
+def customers(item_id=None):
+    return people_page("customers", item_id)
+
+
+@app.post("/customers/<int:item_id>/delete")
+def delete_customer(item_id):
+    return people_delete("customers", item_id)
+
+
+@app.route("/suppliers", methods=["GET", "POST"])
+@app.route("/suppliers/<int:item_id>/edit", methods=["GET", "POST"])
+def suppliers(item_id=None):
+    return people_page("suppliers", item_id)
+
+
+@app.post("/suppliers/<int:item_id>/delete")
+def delete_supplier(item_id):
+    return people_delete("suppliers", item_id)
+
+
+# ---------- settings ----------
+
+@app.route("/settings", methods=["GET", "POST"])
+def settings_page():
+    db = get_db()
+    if request.method == "POST":
+        month = request.form.get("fy_start_month", "1")
+        new = {
+            "business_name": form_text("business_name") or DEFAULT_SETTINGS["business_name"],
+            "currency": form_text("currency"),
+            "fy_start_month": month if month.isdigit() and 1 <= int(month) <= 12 else "1",
+        }
+        for key, value in new.items():
+            db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
+        db.commit()
+        flash("Settings saved! ✅", "ok")
+        return redirect(url_for("settings_page"))
+    return render_template("settings.html", months=MONTHS)
+
+
+init_db()
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8000)), debug=True)
