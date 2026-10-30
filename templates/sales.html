@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Sales{% endblock %}
+{% block content %}
+<h1>💰 Sales (things I sold)</h1>
+
+<section class="panel" id="form">
+  <h2>{{ '✏️ Change this sale' if editing else '➕ Add a new sale' }}</h2>
+  <form method="post" class="grid-form">
+    <label>Customer name *
+      <input name="customer_name" list="customer-list" required autocomplete="off"
+             value="{{ editing.customer_name if editing }}" placeholder="Who bought it?">
+    </label>
+    <datalist id="customer-list">
+      {% for c in customers %}<option value="{{ c.name }}">{% endfor %}
+    </datalist>
+    <label>Product name *
+      <input name="product_name" required value="{{ editing.product_name if editing }}" placeholder="What did they buy?">
+    </label>
+    <label>Quantity
+      <input name="qty" id="qty" type="number" step="any" min="0" value="{{ editing.qty|qty if editing else 1 }}">
+    </label>
+    <label>Price for one
+      <input name="amount" id="amount" type="number" step="0.01" min="0" value="{{ editing.amount if editing }}" placeholder="0.00">
+    </label>
+    <label>Date
+      <input name="date" type="date" value="{{ editing.date if editing else today }}">
+    </label>
+    <div class="total-box">Total amount<br><strong id="total">{{ money(editing.total if editing else 0) }}</strong></div>
+    <div class="form-buttons">
+      <button class="btn big green" type="submit">💾 {{ 'Save changes' if editing else 'Save sale' }}</button>
+      {% if editing %}<a class="btn" href="{{ url_for('sales') }}">Cancel</a>{% endif %}
+    </div>
+  </form>
+  {% if not customers %}
+    <p class="muted">Tip: add people on the <a href="{{ url_for('customers') }}">Customers</a> page and their names will pop up here.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="page-head">
+    <h2>📃 All sales</h2>
+    <form method="get" class="inline"><input name="q" value="{{ q }}" placeholder="🔍 Search customer or product"></form>
+  </div>
+  {% if rows %}
+  <div class="table-wrap">
+  <table class="table">
+    <thead><tr><th>Date</th><th>Customer</th><th>Product</th><th class="num">Qty</th><th class="num">Price for one</th><th class="num">Total</th><th></th></tr></thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td class="nowrap">{{ r.date }}</td>
+        <td>{{ r.customer_name }}</td>
+        <td>{{ r.product_name }}</td>
+        <td class="num">{{ r.qty|qty }}</td>
+        <td class="num">{{ money(r.amount) }}</td>
+        <td class="num"><strong>{{ money(r.total) }}</strong></td>
+        <td class="row-actions">
+          <a class="btn small" href="{{ url_for('sales', item_id=r.id) }}#form">✏️ Edit</a>
+          <form method="post" action="{{ url_for('delete_sale', item_id=r.id) }}" onsubmit="return confirm('Delete this sale?')">
+            <button class="btn small danger">🗑️</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+    <p class="muted">No sales here yet.</p>
+  {% endif %}
+</section>
+
+<script>
+  // Show the total (quantity x price) while typing
+  const qty = document.getElementById('qty'), amount = document.getElementById('amount'), total = document.getElementById('total');
+  const currency = {{ settings.currency|tojson }};
+  function update() {
+    const t = (parseFloat(qty.value) || 0) * (parseFloat(amount.value) || 0);
+    total.textContent = currency + t.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  }
+  qty.addEventListener('input', update); amount.addEventListener('input', update);
+</script>
+{% endblock %}

@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}{{ info.title }}{% endblock %}
+{% block content %}
+<h1>{{ info.icon }} {{ info.title }}</h1>
+
+<section class="panel" id="form">
+  <h2>{{ '✏️ Change this ' ~ info.one if editing else '➕ Add a new ' ~ info.one }}</h2>
+  <form method="post" class="grid-form">
+    {% for field, label, type in info.fields %}
+      <label>{{ label }}{{ ' *' if field == 'name' }}
+        <input name="{{ field }}" type="{{ type }}" {{ 'required' if field == 'name' }}
+               value="{{ editing[field] if editing }}"
+               placeholder="{{ 'Required' if field == 'name' else 'Optional' }}">
+      </label>
+    {% endfor %}
+    <div class="form-buttons">
+      <button class="btn big blue" type="submit">💾 {{ 'Save changes' if editing else 'Add ' ~ info.one }}</button>
+      {% if editing %}<a class="btn" href="{{ url_for(kind) }}">Cancel</a>{% endif %}
+    </div>
+  </form>
+  <p class="muted">Only the name is needed. Everything else is optional.</p>
+</section>
+
+<section class="panel">
+  <div class="page-head">
+    <h2>📃 All {{ kind }}</h2>
+    <form method="get" class="inline"><input name="q" value="{{ q }}" placeholder="🔍 Search by name"></form>
+  </div>
+  {% if rows %}
+  <div class="table-wrap">
+  <table class="table">
+    <thead><tr>{% for field, label, type in info.fields %}<th>{{ label }}</th>{% endfor %}<th></th></tr></thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        {% for field, label, type in info.fields %}
+          <td>
+            {% if type == 'url' and r[field] %}<a href="{{ r[field] }}" target="_blank" rel="noopener">🔗 Open store</a>
+            {% elif type == 'email' and r[field] %}<a href="mailto:{{ r[field] }}">{{ r[field] }}</a>
+            {% elif type == 'tel' and r[field] %}<a href="tel:{{ r[field] }}">{{ r[field] }}</a>
+            {% else %}{{ r[field] or '—' }}{% endif %}
+          </td>
+        {% endfor %}
+        <td class="row-actions">
+          <a class="btn small" href="{{ url_for(kind, item_id=r.id) }}#form">✏️ Edit</a>
+          <form method="post" action="{{ url_for('delete_' ~ info.one, item_id=r.id) }}" onsubmit="return confirm('Delete {{ r.name }}?')">
+            <button class="btn small danger">🗑️</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+    <p class="muted">No {{ kind }} yet.</p>
+  {% endif %}
+</section>
+{% endblock %}

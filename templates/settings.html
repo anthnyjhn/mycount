@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<h1>⚙️ Settings</h1>
+<section class="panel">
+  <form method="post" class="grid-form">
+    <label>Business name
+      <input name="business_name" value="{{ settings.business_name }}">
+    </label>
+    <label>Money sign
+      <input name="currency" value="{{ settings.currency }}" placeholder="₱, $, €, £ ...">
+    </label>
+    <label>My financial year starts in
+      <select name="fy_start_month">
+        {% for m in months %}
+          <option value="{{ loop.index }}" {{ 'selected' if loop.index|string == settings.fy_start_month }}>{{ m }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <div class="form-buttons">
+      <button class="btn big blue" type="submit">💾 Save settings</button>
+    </div>
+  </form>
+  <p class="muted">Most businesses start their year in January. Change it if your accountant uses another month (for example April or July).</p>
+</section>
+{% endblock %}

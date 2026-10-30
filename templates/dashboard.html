@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>📊 How is my business doing?</h1>
+  <form method="get" class="inline">
+    <label>Year
+      <select name="year" onchange="this.form.submit()">
+        {% for y, l in year_choices %}
+          <option value="{{ y }}" {{ 'selected' if y == year }}>{{ l }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </form>
+</div>
+<p class="muted">Financial year {{ label }} · {{ first.strftime('%d %b %Y') }} to {{ last.strftime('%d %b %Y') }}</p>
+
+<div class="cards">
+  <div class="card green">
+    <div class="card-label">💰 Money in (Income)</div>
+    <div class="card-value">{{ money(income) }}</div>
+    <div class="card-help">Everything you sold</div>
+  </div>
+  <div class="card red">
+    <div class="card-label">🛒 Money out (Expenses)</div>
+    <div class="card-value">{{ money(expenses) }}</div>
+    <div class="card-help">Everything you bought</div>
+  </div>
+  <div class="card {{ 'blue' if profit >= 0 else 'red' }}">
+    <div class="card-label">{{ '😀 Profit' if profit >= 0 else '😟 Loss' }}</div>
+    <div class="card-value">{{ money(profit|abs) }}</div>
+    <div class="card-help">{{ 'You earned more than you spent!' if profit >= 0 else 'You spent more than you earned.' }}</div>
+  </div>
+  <a class="card yellow" href="{{ url_for('purchases', show='unpaid') }}">
+    <div class="card-label">⏳ Bills still to pay</div>
+    <div class="card-value">{{ money(unpaid_amount) }}</div>
+    <div class="card-help">{{ unpaid_count }} unpaid purchase{{ '' if unpaid_count == 1 else 's' }} · tap to see</div>
+  </a>
+</div>
+
+<div class="actions">
+  <a class="btn big green" href="{{ url_for('sales') }}#form">➕ I sold something</a>
+  <a class="btn big red" href="{{ url_for('purchases') }}#form">➕ I bought something</a>
+</div>
+
+<section class="panel">
+  <h2>Month by month</h2>
+  <div class="legend"><span class="dot green"></span> Money in <span class="dot red"></span> Money out</div>
+  <div class="chart">
+    {% for m in months %}
+      <div class="col" title="{{ m.name }} {{ m.year }}: in {{ money(m.income) }}, out {{ money(m.expenses) }}">
+        <div class="bars">
+          <div class="bar green" style="height: {{ (m.income / biggest * 100)|round(1) }}%"></div>
+          <div class="bar red" style="height: {{ (m.expenses / biggest * 100)|round(1) }}%"></div>
+        </div>
+        <div class="col-label">{{ m.name }}</div>
+      </div>
+    {% endfor %}
+  </div>
+  <table class="table compact">
+    <thead><tr><th>Month</th><th class="num">Money in</th><th class="num">Money out</th><th class="num">Profit / Loss</th></tr></thead>
+    <tbody>
+      {% for m in months %}
+        {% set p = m.income - m.expenses %}
+        <tr>
+          <td>{{ m.name }} {{ m.year }}</td>
+          <td class="num">{{ money(m.income) }}</td>
+          <td class="num">{{ money(m.expenses) }}</td>
+          <td class="num {{ 'pos' if p > 0 else ('neg' if p < 0) }}">{{ money(p) }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="panel">
+  <h2>🏆 Best selling products</h2>
+  {% if top_products %}
+    <table class="table compact">
+      <thead><tr><th>Product</th><th class="num">Qty sold</th><th class="num">Money in</th></tr></thead>
+      <tbody>
+        {% for p in top_products %}
+          <tr><td>{{ p.product_name }}</td><td class="num">{{ p.qty|qty }}</td><td class="num">{{ money(p.total) }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">No sales yet this year. Add your first sale to see it here!</p>
+  {% endif %}
+</section>
+{% endblock %}

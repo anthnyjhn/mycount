@@ -1,0 +1,13 @@
+services:
+  mycount:
+    build: .
+    container_name: mycount
+    ports:
+      - "8000:8000"
+    environment:
+      # Change this to any long random text
+      SECRET_KEY: "please-change-me"
+    volumes:
+      # Your data is saved in the "data" folder next to this file
+      - ./data:/app/data
+    restart: unless-stopped
