@@ -156,6 +156,7 @@ form.inline label { display: flex; align-items: center; gap: 8px; font-weight: 6
 .form-buttons { display: flex; gap: 10px; align-items: center; grid-column: 1 / -1; }
 .total-box { background: var(--green-soft); border-radius: 12px; padding: 10px 14px; font-weight: 600; }
 .total-box strong { font-size: 24px; }
+.total-box.loss { background: var(--red-soft); color: #7f1d1d; }
 .status-pick { border: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 8px; grid-column: span 2; }
 .status-pick legend { font-weight: 600; margin-bottom: 6px; padding: 0; }
 .status-pick input { width: auto; margin: 0; }
@@ -172,8 +173,8 @@ form.inline label { display: flex; align-items: center; gap: 8px; font-weight: 6
 .num { text-align: right !important; white-space: nowrap; }
 .pos { color: var(--green); font-weight: 700; }
 .neg { color: var(--red); font-weight: 700; }
-.row-actions { display: flex; gap: 6px; justify-content: flex-end; white-space: nowrap; }
-.row-actions form { margin: 0; }
+.row-actions { text-align: right; white-space: nowrap; }
+.row-actions .btn, .row-actions form { display: inline-block; margin: 0 0 0 4px; }
 
 @media (max-width: 600px) {
   body { font-size: 16px; }

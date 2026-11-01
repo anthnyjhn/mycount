@@ -1,5 +1,7 @@
 """MyCount - a very simple tool to track business growth."""
 import os
+import re
+import shutil
 import sqlite3
 from datetime import date, timedelta
 
@@ -26,12 +28,13 @@ CREATE TABLE IF NOT EXISTS suppliers (
 );
 CREATE TABLE IF NOT EXISTS sales (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_number TEXT NOT NULL DEFAULT '',
+    job_name TEXT NOT NULL,
     customer_name TEXT NOT NULL,
-    product_name TEXT NOT NULL,
-    qty REAL NOT NULL DEFAULT 1,
-    amount REAL NOT NULL DEFAULT 0,
-    total REAL NOT NULL DEFAULT 0,
-    date TEXT NOT NULL
+    date TEXT NOT NULL,
+    quoted_price REAL NOT NULL DEFAULT 0,
+    expenses REAL NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'paid'
 );
 CREATE TABLE IF NOT EXISTS purchases (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -73,13 +76,38 @@ def close_db(_exc):
         db.close()
 
 
+def upgrade_sales_to_jobs(db):
+    """Turn sales saved by the first version (product, qty, price) into jobs.
+
+    Product name becomes the job name and the total becomes the quoted price.
+    Old sales start with no job number, no expenses and status "paid".
+    A copy of the database is saved first, just in case.
+    """
+    columns = [row[1] for row in db.execute("PRAGMA table_info(sales)")]
+    if "product_name" not in columns:
+        return
+    backup = DB_PATH + ".before-jobs-update.bak"
+    if not os.path.exists(backup):
+        shutil.copy2(DB_PATH, backup)
+    db.execute("ALTER TABLE sales RENAME COLUMN product_name TO job_name")
+    db.execute("ALTER TABLE sales RENAME COLUMN total TO quoted_price")
+    db.execute("ALTER TABLE sales ADD COLUMN job_number TEXT NOT NULL DEFAULT ''")
+    db.execute("ALTER TABLE sales ADD COLUMN expenses REAL NOT NULL DEFAULT 0")
+    db.execute("ALTER TABLE sales ADD COLUMN status TEXT NOT NULL DEFAULT 'paid'")
+
+
 def init_db():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    db = sqlite3.connect(DB_PATH)
-    db.executescript(SCHEMA)
+    db = sqlite3.connect(DB_PATH, isolation_level=None)
+    # Lock the database so two app workers starting together don't upgrade it twice
+    db.execute("BEGIN IMMEDIATE")
+    upgrade_sales_to_jobs(db)
+    for statement in SCHEMA.split(";"):
+        if statement.strip():
+            db.execute(statement)
     for key, value in DEFAULT_SETTINGS.items():
         db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, value))
-    db.commit()
+    db.execute("COMMIT")
     db.close()
 
 
@@ -94,12 +122,6 @@ def get_settings():
 def inject_globals():
     settings = get_settings()
     return {"settings": settings, "money": lambda v: f"{'-' if v < 0 else ''}{settings['currency']}{abs(v):,.2f}"}
-
-
-@app.template_filter("qty")
-def format_qty(value):
-    """Show 3 instead of 3.0, but keep 2.5 as 2.5."""
-    return f"{round(value, 2):g}"
 
 
 def to_number(value, default=0.0):
@@ -142,10 +164,16 @@ def dashboard():
     first, last, label = fy_range(year, start_month)
     params = (first.isoformat(), last.isoformat())
 
-    income = db.execute("SELECT COALESCE(SUM(total), 0) FROM sales WHERE date BETWEEN ? AND ?", params).fetchone()[0]
-    expenses = db.execute("SELECT COALESCE(SUM(amount), 0) FROM purchases WHERE date BETWEEN ? AND ?", params).fetchone()[0]
+    income, job_expenses = db.execute(
+        "SELECT COALESCE(SUM(quoted_price), 0), COALESCE(SUM(expenses), 0) FROM sales WHERE date BETWEEN ? AND ?",
+        params).fetchone()
+    bought = db.execute("SELECT COALESCE(SUM(amount), 0) FROM purchases WHERE date BETWEEN ? AND ?", params).fetchone()[0]
+    expenses = bought + job_expenses
     unpaid = db.execute(
         "SELECT COALESCE(SUM(amount), 0), COUNT(*) FROM purchases WHERE status = 'unpaid' AND date BETWEEN ? AND ?",
+        params).fetchone()
+    owed = db.execute(
+        "SELECT COALESCE(SUM(quoted_price), 0), COUNT(*) FROM sales WHERE status = 'unpaid' AND date BETWEEN ? AND ?",
         params).fetchone()
 
     # Month by month numbers for the little chart
@@ -154,9 +182,12 @@ def dashboard():
         m = (start_month - 1 + i) % 12 + 1
         y = year if m >= start_month else year + 1
         prefix = f"{y:04d}-{m:02d}"
-        m_in = db.execute("SELECT COALESCE(SUM(total), 0) FROM sales WHERE substr(date, 1, 7) = ?", (prefix,)).fetchone()[0]
-        m_out = db.execute("SELECT COALESCE(SUM(amount), 0) FROM purchases WHERE substr(date, 1, 7) = ?", (prefix,)).fetchone()[0]
-        months.append({"name": MONTHS[m - 1][:3], "year": y, "income": m_in, "expenses": m_out})
+        m_in, m_job_out = db.execute(
+            "SELECT COALESCE(SUM(quoted_price), 0), COALESCE(SUM(expenses), 0) FROM sales WHERE substr(date, 1, 7) = ?",
+            (prefix,)).fetchone()
+        m_bought = db.execute("SELECT COALESCE(SUM(amount), 0) FROM purchases WHERE substr(date, 1, 7) = ?",
+                              (prefix,)).fetchone()[0]
+        months.append({"name": MONTHS[m - 1][:3], "year": y, "income": m_in, "expenses": m_bought + m_job_out})
     biggest = max([1] + [max(mo["income"], mo["expenses"]) for mo in months])
 
     # Years that have data, so the year picker only shows useful choices
@@ -167,18 +198,32 @@ def dashboard():
             years.add(d.year if d.month >= start_month else d.year - 1)
     year_choices = [(y, fy_range(y, start_month)[2]) for y in sorted(years, reverse=True)]
 
-    top_products = db.execute(
-        "SELECT product_name, SUM(qty) AS qty, SUM(total) AS total FROM sales "
-        "WHERE date BETWEEN ? AND ? GROUP BY product_name ORDER BY total DESC LIMIT 5", params).fetchall()
+    top_customers = db.execute(
+        "SELECT customer_name, COUNT(*) AS jobs, SUM(quoted_price) AS quoted, SUM(quoted_price - expenses) AS profit "
+        "FROM sales WHERE date BETWEEN ? AND ? GROUP BY customer_name ORDER BY quoted DESC LIMIT 5", params).fetchall()
 
     return render_template(
-        "dashboard.html", income=income, expenses=expenses, profit=income - expenses,
-        unpaid_amount=unpaid[0], unpaid_count=unpaid[1], months=months, biggest=biggest,
+        "dashboard.html", income=income, expenses=expenses, bought=bought, job_expenses=job_expenses,
+        profit=income - expenses, unpaid_amount=unpaid[0], unpaid_count=unpaid[1],
+        owed_amount=owed[0], owed_count=owed[1], months=months, biggest=biggest,
         year=year, label=label, first=first, last=last, year_choices=year_choices,
-        top_products=top_products)
+        top_customers=top_customers)
 
 
-# ---------- sales ----------
+# ---------- sales (jobs) ----------
+
+def next_job_number(db):
+    """Guess the next job number from the last one typed: 7 -> 8, J-009 -> J-010."""
+    row = db.execute("SELECT job_number FROM sales WHERE job_number != '' ORDER BY id DESC LIMIT 1").fetchone()
+    if not row:
+        return "1"
+    match = re.search(r"(\d+)(?!.*\d)", row[0])
+    if not match:
+        return ""
+    digits = match.group(1)
+    bumped = str(int(digits) + 1).zfill(len(digits))
+    return row[0][:match.start()] + bumped + row[0][match.end():]
+
 
 @app.route("/sales", methods=["GET", "POST"])
 @app.route("/sales/<int:item_id>/edit", methods=["GET", "POST"])
@@ -186,32 +231,46 @@ def sales(item_id=None):
     db = get_db()
     editing = db.execute("SELECT * FROM sales WHERE id = ?", (item_id,)).fetchone() if item_id else None
     if request.method == "POST":
-        customer, product = form_text("customer_name"), form_text("product_name")
-        qty = to_number(request.form.get("qty"), 1)
-        amount = to_number(request.form.get("amount"))
-        sale_date = form_text("date") or date.today().isoformat()
-        if not customer or not product:
-            flash("Please type the customer name and the product name.", "error")
+        job_number, job_name, customer = form_text("job_number"), form_text("job_name"), form_text("customer_name")
+        quoted = to_number(request.form.get("quoted_price"))
+        job_expenses = to_number(request.form.get("expenses"))
+        status = "paid" if request.form.get("status") == "paid" else "unpaid"
+        job_date = form_text("date") or date.today().isoformat()
+        if not job_name or not customer:
+            flash("Please type the job name and the customer name.", "error")
         else:
-            values = (customer, product, qty, amount, round(qty * amount, 2), sale_date)
+            values = (job_number, job_name, customer, job_date, quoted, job_expenses, status)
             if editing:
-                db.execute("UPDATE sales SET customer_name=?, product_name=?, qty=?, amount=?, total=?, date=? "
-                           "WHERE id=?", values + (item_id,))
-                flash("Sale updated! ✅", "ok")
+                db.execute("UPDATE sales SET job_number=?, job_name=?, customer_name=?, date=?, quoted_price=?, "
+                           "expenses=?, status=? WHERE id=?", values + (item_id,))
+                flash("Job updated! ✅", "ok")
             else:
-                db.execute("INSERT INTO sales (customer_name, product_name, qty, amount, total, date) "
-                           "VALUES (?, ?, ?, ?, ?, ?)", values)
-                flash("Sale saved! 🎉", "ok")
+                db.execute("INSERT INTO sales (job_number, job_name, customer_name, date, quoted_price, expenses, status) "
+                           "VALUES (?, ?, ?, ?, ?, ?, ?)", values)
+                flash("Job saved! 🎉", "ok")
             db.commit()
             return redirect(url_for("sales"))
 
     q = request.args.get("q", "").strip()
-    rows = db.execute(
-        "SELECT * FROM sales WHERE customer_name LIKE ? OR product_name LIKE ? ORDER BY date DESC, id DESC",
-        (f"%{q}%", f"%{q}%")).fetchall()
+    show = request.args.get("show", "all")
+    sql = "SELECT * FROM sales WHERE (job_number LIKE ? OR job_name LIKE ? OR customer_name LIKE ?)"
+    args = [f"%{q}%"] * 3
+    if show in ("paid", "unpaid"):
+        sql += " AND status = ?"
+        args.append(show)
+    rows = db.execute(sql + " ORDER BY date DESC, id DESC", args).fetchall()
     customers = db.execute("SELECT name FROM customers ORDER BY name").fetchall()
-    return render_template("sales.html", rows=rows, customers=customers, editing=editing, q=q,
-                           today=date.today().isoformat())
+    return render_template("sales.html", rows=rows, customers=customers, editing=editing, q=q, show=show,
+                           today=date.today().isoformat(), next_number=next_job_number(db))
+
+
+@app.post("/sales/<int:item_id>/toggle")
+def toggle_sale(item_id):
+    db = get_db()
+    db.execute("UPDATE sales SET status = CASE status WHEN 'paid' THEN 'unpaid' ELSE 'paid' END WHERE id = ?",
+               (item_id,))
+    db.commit()
+    return redirect(request.referrer or url_for("sales"))
 
 
 @app.post("/sales/<int:item_id>/delete")
@@ -219,7 +278,7 @@ def delete_sale(item_id):
     db = get_db()
     db.execute("DELETE FROM sales WHERE id = ?", (item_id,))
     db.commit()
-    flash("Sale deleted. 🗑️", "ok")
+    flash("Job deleted. 🗑️", "ok")
     return redirect(url_for("sales"))
 
 

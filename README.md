@@ -2,7 +2,7 @@
 
 A very simple website you run on your own computer to keep track of:
 
-- 💰 **Sales**: what you sold (customer, product, quantity, price, total, date)
+- 💰 **Sales (jobs)**: job number, job name, customer, date, quoted price, expenses, profit, paid / not yet
 - 🛒 **Purchases**: what you bought (supplier, product, amount, paid / unpaid, date)
 - 🧑 **Customers**: name (required), address, phone, email
 - 🏭 **Suppliers**: name (required), address, store link
@@ -79,6 +79,15 @@ All your data is in one file: **`data/mycount.db`** inside the project folder.
 
 ---
 
+## ⬆️ Updating to a new version
+
+1. Get the new code (`git pull`, or download the ZIP again and copy your `data` folder into it).
+2. Run `docker compose up -d --build`.
+
+Your data is kept. When an update changes how data is stored, the app first saves a copy of your database next to it (for example `data/mycount.db.before-jobs-update.bak`).
+
+---
+
 ## 📱 Use it on your phone (same Wi-Fi)
 
 1. Find your computer's local IP address (Windows: `ipconfig`, Mac: System Settings → Wi-Fi → Details). It looks like `192.168.1.25`.
@@ -98,11 +107,14 @@ There is **no password** on this app, so only use it on your own home/office net
 
 ## 🧮 How the numbers work
 
-- **Total amount** on a sale = quantity × price for one (calculated for you).
-- **Income** = all sales totals in the selected financial year.
-- **Expenses** = all purchases in the selected financial year (paid *and* unpaid).
+- **Profit** on a job = quoted price − expenses (calculated for you).
+- **Income** = quoted price of all jobs in the selected financial year (paid *and* not yet paid).
+- **Expenses** = all purchases + all job expenses in the selected financial year.
 - **Profit / Loss** = Income − Expenses.
+- **Customers still owe me** = jobs marked *Not yet*. Tap the ⏳ button on a job to mark it ✅ Paid.
 - **Bills still to pay** = purchases marked *unpaid*. Tap the ⏳ Unpaid button on a purchase to mark it ✅ Paid.
+
+💡 A cost you typed as a job's **Expenses** should not also be added on the Purchases page, or it is counted twice.
 
 ## 🛠️ For developers (without Docker)
 
