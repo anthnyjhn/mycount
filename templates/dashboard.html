@@ -19,18 +19,23 @@
   <div class="card green">
     <div class="card-label">💰 Money in (Income)</div>
     <div class="card-value">{{ money(income) }}</div>
-    <div class="card-help">Everything you sold</div>
+    <div class="card-help">Quoted price of all your jobs</div>
   </div>
   <div class="card red">
     <div class="card-label">🛒 Money out (Expenses)</div>
     <div class="card-value">{{ money(expenses) }}</div>
-    <div class="card-help">Everything you bought</div>
+    <div class="card-help">Purchases {{ money(bought) }} + job expenses {{ money(job_expenses) }}</div>
   </div>
   <div class="card {{ 'blue' if profit >= 0 else 'red' }}">
     <div class="card-label">{{ '😀 Profit' if profit >= 0 else '😟 Loss' }}</div>
     <div class="card-value">{{ money(profit|abs) }}</div>
     <div class="card-help">{{ 'You earned more than you spent!' if profit >= 0 else 'You spent more than you earned.' }}</div>
   </div>
+  <a class="card yellow" href="{{ url_for('sales', show='unpaid') }}">
+    <div class="card-label">🙋 Customers still owe me</div>
+    <div class="card-value">{{ money(owed_amount) }}</div>
+    <div class="card-help">{{ owed_count }} job{{ '' if owed_count == 1 else 's' }} not paid yet · tap to see</div>
+  </a>
   <a class="card yellow" href="{{ url_for('purchases', show='unpaid') }}">
     <div class="card-label">⏳ Bills still to pay</div>
     <div class="card-value">{{ money(unpaid_amount) }}</div>
@@ -39,7 +44,7 @@
 </div>
 
 <div class="actions">
-  <a class="btn big green" href="{{ url_for('sales') }}#form">➕ I sold something</a>
+  <a class="btn big green" href="{{ url_for('sales') }}#form">➕ I did a job</a>
   <a class="btn big red" href="{{ url_for('purchases') }}#form">➕ I bought something</a>
 </div>
 
@@ -57,7 +62,7 @@
       </div>
     {% endfor %}
   </div>
-  <table class="table compact">
+  <div class="table-wrap"><table class="table compact">
     <thead><tr><th>Month</th><th class="num">Money in</th><th class="num">Money out</th><th class="num">Profit / Loss</th></tr></thead>
     <tbody>
       {% for m in months %}
@@ -70,22 +75,27 @@
         </tr>
       {% endfor %}
     </tbody>
-  </table>
+  </table></div>
 </section>
 
 <section class="panel">
-  <h2>🏆 Best selling products</h2>
-  {% if top_products %}
-    <table class="table compact">
-      <thead><tr><th>Product</th><th class="num">Qty sold</th><th class="num">Money in</th></tr></thead>
+  <h2>🏆 Best customers</h2>
+  {% if top_customers %}
+    <div class="table-wrap"><table class="table compact">
+      <thead><tr><th>Customer</th><th class="num">Jobs</th><th class="num">Quoted price</th><th class="num">Profit</th></tr></thead>
       <tbody>
-        {% for p in top_products %}
-          <tr><td>{{ p.product_name }}</td><td class="num">{{ p.qty|qty }}</td><td class="num">{{ money(p.total) }}</td></tr>
+        {% for c in top_customers %}
+          <tr>
+            <td>{{ c.customer_name }}</td>
+            <td class="num">{{ c.jobs }}</td>
+            <td class="num">{{ money(c.quoted) }}</td>
+            <td class="num {{ 'pos' if c.profit > 0 else ('neg' if c.profit < 0) }}">{{ money(c.profit) }}</td>
+          </tr>
         {% endfor %}
       </tbody>
-    </table>
+    </table></div>
   {% else %}
-    <p class="muted">No sales yet this year. Add your first sale to see it here!</p>
+    <p class="muted">No jobs yet this year. Add your first job to see it here!</p>
   {% endif %}
 </section>
 {% endblock %}
