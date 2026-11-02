@@ -1,50 +1,57 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block title %}{{ info.title }}{% endblock %}
 {% block content %}
-<h1>{{ info.icon }} {{ info.title }}</h1>
+<div class="page-head">
+  <div>
+    <h1>{{ info.title }}</h1>
+    <p class="subtitle">Only the name is required. Everything else is optional.</p>
+  </div>
+</div>
 
-<section class="panel" id="form">
-  <h2>{{ '✏️ Change this ' ~ info.one if editing else '➕ Add a new ' ~ info.one }}</h2>
-  <form method="post" class="grid-form">
+<section class="card" id="form">
+  <div class="card-head"><h2>{{ 'Edit ' ~ info.one if editing else 'New ' ~ info.one }}</h2></div>
+  <form method="post" class="form-grid">
     {% for field, label, type in info.fields %}
-      <label>{{ label }}{{ ' *' if field == 'name' }}
+      <label><span>{{ label }}{% if field == 'name' %} <span class="req">*</span>{% endif %}</span>
         <input name="{{ field }}" type="{{ type }}" {{ 'required' if field == 'name' }}
                value="{{ editing[field] if editing }}"
-               placeholder="{{ 'Required' if field == 'name' else 'Optional' }}">
+               placeholder="{{ 'https://…' if type == 'url' else ('' if field == 'name' else 'Optional') }}">
       </label>
     {% endfor %}
-    <div class="form-buttons">
-      <button class="btn big blue" type="submit">💾 {{ 'Save changes' if editing else 'Add ' ~ info.one }}</button>
+    <div class="form-actions">
+      <button class="btn primary" type="submit">{{ 'Save changes' if editing else 'Add ' ~ info.one }}</button>
       {% if editing %}<a class="btn" href="{{ url_for(kind) }}">Cancel</a>{% endif %}
     </div>
   </form>
-  <p class="muted">Only the name is needed. Everything else is optional.</p>
 </section>
 
-<section class="panel">
-  <div class="page-head">
-    <h2>📃 All {{ kind }}</h2>
-    <form method="get" class="inline"><input name="q" value="{{ q }}" placeholder="🔍 Search by name"></form>
+<section class="card">
+  <div class="card-head">
+    <h2>All {{ kind }} <span class="count">{{ rows|length }}</span></h2>
+    <form method="get" class="toolbar">
+      <div class="search">{{ icon('search', 16) }}<input name="q" value="{{ q }}" placeholder="Search by name" aria-label="Search"></div>
+    </form>
   </div>
   {% if rows %}
   <div class="table-wrap">
   <table class="table">
-    <thead><tr>{% for field, label, type in info.fields %}<th>{{ label }}</th>{% endfor %}<th></th></tr></thead>
+    <thead><tr>{% for field, label, type in info.fields %}<th>{{ label }}</th>{% endfor %}<th class="actions-col"><span class="sr-only">Actions</span></th></tr></thead>
     <tbody>
       {% for r in rows %}
       <tr>
         {% for field, label, type in info.fields %}
-          <td>
-            {% if type == 'url' and r[field] %}<a href="{{ r[field] }}" target="_blank" rel="noopener">🔗 Open store</a>
+          <td class="{{ 'strong' if field == 'name' }}">
+            {% if type == 'url' and r[field] %}<a href="{{ r[field] }}" target="_blank" rel="noopener">Open store {{ icon('external', 14) }}</a>
             {% elif type == 'email' and r[field] %}<a href="mailto:{{ r[field] }}">{{ r[field] }}</a>
             {% elif type == 'tel' and r[field] %}<a href="tel:{{ r[field] }}">{{ r[field] }}</a>
             {% else %}{{ r[field] or '—' }}{% endif %}
           </td>
         {% endfor %}
         <td class="row-actions">
-          <a class="btn small" href="{{ url_for(kind, item_id=r.id) }}#form">✏️ Edit</a>
+          <a class="icon-btn" href="{{ url_for(kind, item_id=r.id) }}#form" title="Edit" aria-label="Edit">{{ icon('edit', 16) }}</a>
           <form method="post" action="{{ url_for('delete_' ~ info.one, item_id=r.id) }}" onsubmit="return confirm('Delete this {{ info.one }}?')">
-            <button class="btn small danger">🗑️</button>
+            <button class="icon-btn danger" title="Delete" aria-label="Delete">{{ icon('trash', 16) }}</button>
           </form>
         </td>
       </tr>
@@ -53,7 +60,7 @@
   </table>
   </div>
   {% else %}
-    <p class="muted">No {{ kind }} yet.</p>
+    <p class="empty">No {{ kind }} found.</p>
   {% endif %}
 </section>
 {% endblock %}

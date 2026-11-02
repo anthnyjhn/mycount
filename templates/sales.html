@@ -1,18 +1,24 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block title %}Sales{% endblock %}
 {% block content %}
-<h1>💰 Sales (my jobs)</h1>
+<div class="page-head">
+  <div>
+    <h1>Sales</h1>
+    <p class="subtitle">Every job you do, what you charged, what it cost and whether you've been paid.</p>
+  </div>
+</div>
 
-<section class="panel" id="form">
-  <h2>{{ '✏️ Change this job' if editing else '➕ Add a new job' }}</h2>
-  <form method="post" class="grid-form">
+<section class="card" id="form">
+  <div class="card-head"><h2>{{ 'Edit job' if editing else 'New job' }}</h2></div>
+  <form method="post" class="form-grid">
     <label>Job number
       <input name="job_number" value="{{ editing.job_number if editing else next_number }}" placeholder="e.g. 101">
     </label>
-    <label>Job name *
+    <label><span>Job name <span class="req">*</span></span>
       <input name="job_name" required value="{{ editing.job_name if editing }}" placeholder="What is the job?">
     </label>
-    <label>Customer name *
+    <label><span>Customer name <span class="req">*</span></span>
       <input name="customer_name" list="customer-list" required autocomplete="off"
              value="{{ editing.customer_name if editing }}" placeholder="Who is it for?">
     </label>
@@ -23,67 +29,69 @@
       <input name="date" type="date" value="{{ editing.date if editing else today }}">
     </label>
     <label>Quoted price
-      <input name="quoted_price" id="quoted" type="number" step="0.01" min="0" value="{{ editing.quoted_price if editing }}" placeholder="What the customer pays">
+      <input name="quoted_price" id="quoted" type="number" step="0.01" min="0" value="{{ editing.quoted_price if editing }}" placeholder="0.00">
     </label>
     <label>Expenses
-      <input name="expenses" id="expenses" type="number" step="0.01" min="0" value="{{ editing.expenses if editing }}" placeholder="What the job cost you">
+      <input name="expenses" id="expenses" type="number" step="0.01" min="0" value="{{ editing.expenses if editing }}" placeholder="0.00">
     </label>
     {% set p = (editing.quoted_price - editing.expenses) if editing else 0 %}
-    <div class="total-box {{ 'loss' if p < 0 }}" id="profit-box">Profit<br><strong id="profit">{{ money(p) }}</strong></div>
-    <fieldset class="status-pick">
-      <legend>Did the customer pay?</legend>
+    {% set mg = (p / editing.quoted_price * 100) if editing and editing.quoted_price else none %}
+    <div class="readout {{ 'loss' if p < 0 }}" id="profit-box">
+      <span class="readout-label">Profit</span>
+      <span class="readout-value"><span id="profit">{{ money(p) }}</span> <span class="readout-pct" id="margin">{{ '(' ~ (mg|pct(0)) ~ ')' if mg is not none }}</span></span>
+    </div>
+    <fieldset class="segmented">
+      <legend>Payment status</legend>
       {% set st = editing.status if editing else 'unpaid' %}
-      <label class="pill green"><input type="radio" name="status" value="paid" {{ 'checked' if st == 'paid' }}> ✅ Paid</label>
-      <label class="pill yellow"><input type="radio" name="status" value="unpaid" {{ 'checked' if st == 'unpaid' }}> ⏳ Not yet</label>
+      <label><input type="radio" name="status" value="paid" {{ 'checked' if st == 'paid' }}><span>Paid</span></label>
+      <label><input type="radio" name="status" value="unpaid" {{ 'checked' if st == 'unpaid' }}><span>Not yet</span></label>
     </fieldset>
-    <div class="form-buttons">
-      <button class="btn big green" type="submit">💾 {{ 'Save changes' if editing else 'Save job' }}</button>
+    <div class="form-actions">
+      <button class="btn primary" type="submit">{{ 'Save changes' if editing else 'Add job' }}</button>
       {% if editing %}<a class="btn" href="{{ url_for('sales') }}">Cancel</a>{% endif %}
     </div>
   </form>
-  {% if not customers %}
-    <p class="muted">Tip: add people on the <a href="{{ url_for('customers') }}">Customers</a> page and their names will pop up here.</p>
-  {% endif %}
 </section>
 
-<section class="panel">
-  <div class="page-head">
-    <h2>📃 All jobs</h2>
-    <form method="get" class="inline">
-      <select name="show" onchange="this.form.submit()">
-        <option value="all" {{ 'selected' if show == 'all' }}>Show all</option>
-        <option value="unpaid" {{ 'selected' if show == 'unpaid' }}>Only not paid yet ⏳</option>
-        <option value="paid" {{ 'selected' if show == 'paid' }}>Only paid ✅</option>
+<section class="card">
+  <div class="card-head">
+    <h2>All jobs <span class="count">{{ rows|length }}</span></h2>
+    <form method="get" class="toolbar">
+      <select name="show" onchange="this.form.submit()" aria-label="Payment status">
+        <option value="all" {{ 'selected' if show == 'all' }}>All statuses</option>
+        <option value="unpaid" {{ 'selected' if show == 'unpaid' }}>Not yet paid</option>
+        <option value="paid" {{ 'selected' if show == 'paid' }}>Paid</option>
       </select>
-      <input name="q" value="{{ q }}" placeholder="🔍 Search job or customer">
+      <div class="search">{{ icon('search', 16) }}<input name="q" value="{{ q }}" placeholder="Search job or customer" aria-label="Search"></div>
     </form>
   </div>
   {% if rows %}
   <div class="table-wrap">
   <table class="table">
-    <thead><tr><th>Job #</th><th>Job name</th><th>Customer</th><th>Date</th><th class="num">Quoted price</th><th class="num">Expenses</th><th class="num">Profit</th><th>Payment</th><th></th></tr></thead>
+    <thead><tr><th>Job #</th><th>Job name</th><th>Customer</th><th>Date</th><th class="num">Quoted price</th><th class="num">Expenses</th><th class="num">Profit</th><th>Payment</th><th class="actions-col"><span class="sr-only">Actions</span></th></tr></thead>
     <tbody>
       {% for r in rows %}
       {% set p = r.quoted_price - r.expenses %}
+      {% set mg = (p / r.quoted_price * 100) if r.quoted_price else none %}
       <tr>
-        <td class="nowrap">{{ r.job_number or '—' }}</td>
+        <td class="nowrap mono">{{ r.job_number or '—' }}</td>
         <td>{{ r.job_name }}</td>
         <td>{{ r.customer_name }}</td>
         <td class="nowrap">{{ r.date }}</td>
         <td class="num">{{ money(r.quoted_price) }}</td>
         <td class="num">{{ money(r.expenses) }}</td>
-        <td class="num {{ 'pos' if p > 0 else ('neg' if p < 0) }}">{{ money(p) }}</td>
+        <td class="num {{ 'pos' if p > 0 else ('neg' if p < 0) }}">{{ money(p) }}{% if mg is not none %} <span class="pct">({{ mg|pct(0) }})</span>{% endif %}</td>
         <td>
           <form method="post" action="{{ url_for('toggle_sale', item_id=r.id) }}">
-            <button class="pill {{ 'green' if r.status == 'paid' else 'yellow' }}" title="Tap to change">
-              {{ '✅ Paid' if r.status == 'paid' else '⏳ Not yet' }}
+            <button class="badge-btn {{ 'good' if r.status == 'paid' else 'warn' }}" title="Click to change">
+              {{ 'Paid' if r.status == 'paid' else 'Not yet' }}
             </button>
           </form>
         </td>
         <td class="row-actions">
-          <a class="btn small" href="{{ url_for('sales', item_id=r.id) }}#form">✏️ Edit</a>
+          <a class="icon-btn" href="{{ url_for('sales', item_id=r.id) }}#form" title="Edit" aria-label="Edit">{{ icon('edit', 16) }}</a>
           <form method="post" action="{{ url_for('delete_sale', item_id=r.id) }}" onsubmit="return confirm('Delete this job?')">
-            <button class="btn small danger">🗑️</button>
+            <button class="icon-btn danger" title="Delete" aria-label="Delete">{{ icon('trash', 16) }}</button>
           </form>
         </td>
       </tr>
@@ -91,21 +99,23 @@
     </tbody>
   </table>
   </div>
-  <p class="muted">Tip: tap the Paid / Not yet button to switch it.</p>
+  <p class="table-foot muted">Click a payment status to switch it between Paid and Not yet.</p>
   {% else %}
-    <p class="muted">No jobs here yet.</p>
+    <p class="empty">No jobs found.</p>
   {% endif %}
 </section>
 
 <script>
-  // Show the profit (quoted price - expenses) while typing
+  // Show the profit and margin while typing
   const quoted = document.getElementById('quoted'), expenses = document.getElementById('expenses');
-  const profit = document.getElementById('profit'), box = document.getElementById('profit-box');
+  const profit = document.getElementById('profit'), marginEl = document.getElementById('margin');
+  const box = document.getElementById('profit-box');
   const currency = {{ settings.currency|tojson }};
   function update() {
-    const p = (parseFloat(quoted.value) || 0) - (parseFloat(expenses.value) || 0);
-    const text = currency + Math.abs(p).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
-    profit.textContent = (p < 0 ? '-' : '') + text;
+    const q = parseFloat(quoted.value) || 0, p = q - (parseFloat(expenses.value) || 0);
+    profit.textContent = (p < 0 ? '-' : '') + currency +
+      Math.abs(p).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    marginEl.textContent = q ? '(' + Math.round(p / q * 100) + '%)' : '';
     box.classList.toggle('loss', p < 0);
   }
   quoted.addEventListener('input', update); expenses.addEventListener('input', update);

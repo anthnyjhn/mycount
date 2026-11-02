@@ -1,101 +1,218 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block title %}Dashboard{% endblock %}
 {% block content %}
 <div class="page-head">
-  <h1>📊 How is my business doing?</h1>
-  <form method="get" class="inline">
-    <label>Year
-      <select name="year" onchange="this.form.submit()">
+  <div>
+    <h1>Dashboard</h1>
+    <p class="subtitle">Financial year {{ label }} · {{ first.strftime('%d %b %Y') }} – {{ last.strftime('%d %b %Y') }}</p>
+  </div>
+  <div class="page-actions">
+    <form method="get" class="inline">
+      <label class="sr-only" for="year">Financial year</label>
+      <select id="year" name="year" onchange="this.form.submit()">
         {% for y, l in year_choices %}
-          <option value="{{ y }}" {{ 'selected' if y == year }}>{{ l }}</option>
+          <option value="{{ y }}" {{ 'selected' if y == year }}>FY {{ l }}</option>
         {% endfor %}
       </select>
-    </label>
-  </form>
-</div>
-<p class="muted">Financial year {{ label }} · {{ first.strftime('%d %b %Y') }} to {{ last.strftime('%d %b %Y') }}</p>
-
-<div class="cards">
-  <div class="card green">
-    <div class="card-label">💰 Money in (Income)</div>
-    <div class="card-value">{{ money(income) }}</div>
-    <div class="card-help">Quoted price of all your jobs</div>
+    </form>
+    <a class="btn" href="{{ url_for('purchases') }}#form">{{ icon('plus', 16) }}New purchase</a>
+    <a class="btn primary" href="{{ url_for('sales') }}#form">{{ icon('plus', 16) }}New job</a>
   </div>
-  <div class="card red">
-    <div class="card-label">🛒 Money out (Expenses)</div>
-    <div class="card-value">{{ money(expenses) }}</div>
-    <div class="card-help">Purchases {{ money(bought) }} + job expenses {{ money(job_expenses) }}</div>
-  </div>
-  <div class="card {{ 'blue' if profit >= 0 else 'red' }}">
-    <div class="card-label">{{ '😀 Profit' if profit >= 0 else '😟 Loss' }}</div>
-    <div class="card-value">{{ money(profit|abs) }}</div>
-    <div class="card-help">{{ 'You earned more than you spent!' if profit >= 0 else 'You spent more than you earned.' }}</div>
-  </div>
-  <a class="card yellow" href="{{ url_for('sales', show='unpaid') }}">
-    <div class="card-label">🙋 Customers still owe me</div>
-    <div class="card-value">{{ money(owed_amount) }}</div>
-    <div class="card-help">{{ owed_count }} job{{ '' if owed_count == 1 else 's' }} not paid yet · tap to see</div>
-  </a>
-  <a class="card yellow" href="{{ url_for('purchases', show='unpaid') }}">
-    <div class="card-label">⏳ Bills still to pay</div>
-    <div class="card-value">{{ money(unpaid_amount) }}</div>
-    <div class="card-help">{{ unpaid_count }} unpaid purchase{{ '' if unpaid_count == 1 else 's' }} · tap to see</div>
-  </a>
 </div>
 
-<div class="actions">
-  <a class="btn big green" href="{{ url_for('sales') }}#form">➕ I did a job</a>
-  <a class="btn big red" href="{{ url_for('purchases') }}#form">➕ I bought something</a>
-</div>
-
-<section class="panel">
-  <h2>Month by month</h2>
-  <div class="legend"><span class="dot green"></span> Money in <span class="dot red"></span> Money out</div>
-  <div class="chart">
-    {% for m in months %}
-      <div class="col" title="{{ m.name }} {{ m.year }}: in {{ money(m.income) }}, out {{ money(m.expenses) }}">
-        <div class="bars">
-          <div class="bar green" style="height: {{ (m.income / biggest * 100)|round(1) }}%"></div>
-          <div class="bar red" style="height: {{ (m.expenses / biggest * 100)|round(1) }}%"></div>
-        </div>
-        <div class="col-label">{{ m.name }}</div>
+<div class="kpis">
+  <div class="kpi">
+    <div class="kpi-label">Revenue</div>
+    <div class="kpi-value">{{ money(income) }}</div>
+    <div class="kpi-note">{{ job_count }} job{{ '' if job_count == 1 else 's' }} this year</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Expenses</div>
+    <div class="kpi-value">{{ money(expenses) }}</div>
+    <div class="kpi-note">Purchases {{ money(bought) }} · Job costs {{ money(job_expenses) }}</div>
+  </div>
+  <div class="kpi accent-{{ 'good' if profit >= 0 else 'bad' }}">
+    <div class="kpi-label">{{ 'Net profit' if profit >= 0 else 'Net loss' }}</div>
+    <div class="kpi-value {{ 'neg' if profit < 0 }}">{{ money(profit) }}</div>
+    <div class="kpi-note">Net margin {{ net_margin|pct(1) }}</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Avg. profit margin</div>
+    <div class="kpi-value">{{ job_margin|pct(1) }}</div>
+    <div class="kpi-note">Across all jobs (quoted price − job expenses)</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">{{ 'This month' if month_now else 'Best month' }}</div>
+    {% if month_now %}
+      <div class="kpi-value">{{ money(month_now.income) }}</div>
+      <div class="kpi-note">
+        {{ month_now.jobs }} job{{ '' if month_now.jobs == 1 else 's' }} so far
+        {% if month_before %}· Last month {{ money(month_before.income) }}{% endif %}
       </div>
-    {% endfor %}
+    {% else %}
+      {% set best = months|max(attribute='income') %}
+      <div class="kpi-value">{{ money(best.income) }}</div>
+      <div class="kpi-note">{{ best.full if best.income else 'No income yet' }}</div>
+    {% endif %}
   </div>
-  <div class="table-wrap"><table class="table compact">
-    <thead><tr><th>Month</th><th class="num">Money in</th><th class="num">Money out</th><th class="num">Profit / Loss</th></tr></thead>
-    <tbody>
-      {% for m in months %}
-        {% set p = m.income - m.expenses %}
-        <tr>
-          <td>{{ m.name }} {{ m.year }}</td>
-          <td class="num">{{ money(m.income) }}</td>
-          <td class="num">{{ money(m.expenses) }}</td>
-          <td class="num {{ 'pos' if p > 0 else ('neg' if p < 0) }}">{{ money(p) }}</td>
-        </tr>
+  <div class="kpi">
+    <div class="kpi-label">Avg. monthly income</div>
+    <div class="kpi-value">{{ money(avg_month_income) }}</div>
+    <div class="kpi-note">Over {{ months_so_far }} month{{ '' if months_so_far == 1 else 's' }} so far</div>
+  </div>
+  <a class="kpi link" href="{{ url_for('sales', show='unpaid') }}">
+    <div class="kpi-label">Customers owe you</div>
+    <div class="kpi-value">{{ money(owed_amount) }}</div>
+    <div class="kpi-note">{{ owed_count }} unpaid job{{ '' if owed_count == 1 else 's' }} · View</div>
+  </a>
+  <a class="kpi link" href="{{ url_for('purchases', show='unpaid') }}">
+    <div class="kpi-label">Bills to pay</div>
+    <div class="kpi-value">{{ money(unpaid_amount) }}</div>
+    <div class="kpi-note">{{ unpaid_count }} unpaid purchase{{ '' if unpaid_count == 1 else 's' }} · View</div>
+  </a>
+</div>
+
+<section class="card">
+  <div class="card-head">
+    <div>
+      <h2>Goals for FY {{ label }}</h2>
+      <p class="card-sub">The marker shows where you should be today ({{ year_done|pct(0) }} of the year has passed).</p>
+    </div>
+    {% if goal %}
+      <button class="btn small" type="button" onclick="document.getElementById('goal-form').hidden = !document.getElementById('goal-form').hidden">{{ icon('edit', 15) }}Edit goals</button>
+    {% endif %}
+  </div>
+
+  {% if revenue_goal or profit_goal %}
+    <div class="goals">
+      {% for name, gp in [('Revenue goal', revenue_goal), ('Profit goal', profit_goal)] if gp %}
+        <div class="goal">
+          <div class="goal-top">
+            <span class="goal-name">{{ name }}</span>
+            {% if gp.state == 'reached' %}<span class="badge good">{{ icon('check', 14) }}Reached</span>
+            {% elif gp.state == 'on_track' %}<span class="badge info">{{ icon('target', 14) }}On track</span>
+            {% else %}<span class="badge warn">{{ icon('clock', 14) }}Behind</span>{% endif %}
+          </div>
+          <div class="goal-figures"><strong>{{ money(gp.actual) }}</strong> of {{ money(gp.target) }} <span class="muted">({{ gp.percent|pct(0) }})</span></div>
+          <div class="progress" role="progressbar" aria-valuenow="{{ gp.bar|round(0) }}" aria-valuemin="0" aria-valuemax="100" aria-label="{{ name }}">
+            <div class="progress-fill {{ gp.state }}" style="width: {{ gp.bar|round(1) }}%"></div>
+            <div class="progress-marker" style="left: {{ gp.expected|round(1) }}%" title="Where you should be today"></div>
+          </div>
+          <div class="goal-foot muted">
+            {% if gp.state == 'reached' %}Goal reached. Well done.
+            {% else %}{{ money(gp.target - gp.actual) }} to go{% endif %}
+          </div>
+        </div>
       {% endfor %}
-    </tbody>
-  </table></div>
+    </div>
+  {% endif %}
+
+  <form id="goal-form" method="post" action="{{ url_for('save_goals', year=year) }}" class="form-row" {{ 'hidden' if goal }}>
+    {% if not goal %}<p class="muted full">You haven't set goals for this year yet. Add a revenue goal, a profit goal, or both.</p>{% endif %}
+    <label>Revenue goal
+      <input name="revenue" type="number" step="0.01" min="0" value="{{ goal.revenue if goal and goal.revenue }}" placeholder="e.g. 500000">
+    </label>
+    <label>Profit goal
+      <input name="profit" type="number" step="0.01" min="0" value="{{ goal.profit if goal and goal.profit }}" placeholder="e.g. 150000">
+    </label>
+    <div class="form-actions"><button class="btn primary" type="submit">Save goals</button></div>
+  </form>
 </section>
 
-<section class="panel">
-  <h2>🏆 Best customers</h2>
-  {% if top_customers %}
-    <div class="table-wrap"><table class="table compact">
-      <thead><tr><th>Customer</th><th class="num">Jobs</th><th class="num">Quoted price</th><th class="num">Profit</th></tr></thead>
-      <tbody>
-        {% for c in top_customers %}
-          <tr>
-            <td>{{ c.customer_name }}</td>
-            <td class="num">{{ c.jobs }}</td>
-            <td class="num">{{ money(c.quoted) }}</td>
-            <td class="num {{ 'pos' if c.profit > 0 else ('neg' if c.profit < 0) }}">{{ money(c.profit) }}</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table></div>
-  {% else %}
-    <p class="muted">No jobs yet this year. Add your first job to see it here!</p>
-  {% endif %}
+<section class="card">
+  <div class="card-head">
+    <div>
+      <h2>Monthly income and expenses</h2>
+      <p class="card-sub">Hover over a month to see the details.</p>
+    </div>
+    <div class="legend">
+      <span><i class="swatch income"></i>Income</span>
+      <span><i class="swatch expense"></i>Expenses</span>
+    </div>
+  </div>
+  <div class="chart" style="--max: {{ chart_max }}">
+    <div class="chart-grid" aria-hidden="true">
+      {% for step in [1, 0.75, 0.5, 0.25, 0] %}
+        <div class="gridline"><span>{{ money_short(chart_max * step) }}</span></div>
+      {% endfor %}
+    </div>
+    <div class="chart-cols">
+      {% for m in months %}
+        <div class="chart-col {{ 'current' if m.current }}" tabindex="0">
+          <div class="bars">
+            <div class="bar income" style="height: {{ (m.income / chart_max * 100)|round(2) }}%"></div>
+            <div class="bar expense" style="height: {{ (m.expenses / chart_max * 100)|round(2) }}%"></div>
+          </div>
+          <div class="chart-label">{{ m.name }}</div>
+          <div class="chart-count">{{ m.jobs if m.jobs else '' }}</div>
+          <div class="tip" role="tooltip">
+            <strong>{{ m.full }}</strong>
+            <div><i class="swatch income"></i>Income <span>{{ money(m.income) }}</span></div>
+            <div><i class="swatch expense"></i>Expenses <span>{{ money(m.expenses) }}</span></div>
+            <div>Profit <span class="{{ 'neg' if m.profit < 0 }}">{{ money(m.profit) }}</span></div>
+            <div>Jobs <span>{{ m.jobs }}</span></div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+  <p class="chart-foot muted">Numbers under each month show how many jobs you did.</p>
 </section>
+
+<div class="two-col">
+  <section class="card">
+    <div class="card-head"><h2>Monthly breakdown</h2></div>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>Month</th><th class="num">Jobs</th><th class="num">Income</th><th class="num">Expenses</th><th class="num">Profit</th><th class="num">Job margin</th></tr></thead>
+        <tbody>
+          {% for m in months %}
+            <tr class="{{ 'current' if m.current }} {{ 'future' if m.future }}">
+              <td class="nowrap">{{ m.full }}</td>
+              <td class="num">{{ m.jobs }}</td>
+              <td class="num">{{ money(m.income) }}</td>
+              <td class="num">{{ money(m.expenses) }}</td>
+              <td class="num {{ 'pos' if m.profit > 0 else ('neg' if m.profit < 0) }}">{{ money(m.profit) }}</td>
+              <td class="num">{{ m.job_margin|pct(0) }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td>Total</td>
+            <td class="num">{{ job_count }}</td>
+            <td class="num">{{ money(income) }}</td>
+            <td class="num">{{ money(expenses) }}</td>
+            <td class="num {{ 'pos' if profit > 0 else ('neg' if profit < 0) }}">{{ money(profit) }}</td>
+            <td class="num">{{ job_margin|pct(0) }}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>Top customers</h2></div>
+    {% if top_customers %}
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>Customer</th><th class="num">Jobs</th><th class="num">Revenue</th><th class="num">Profit</th></tr></thead>
+          <tbody>
+            {% for c in top_customers %}
+              <tr>
+                <td>{{ c.customer_name }}</td>
+                <td class="num">{{ c.jobs }}</td>
+                <td class="num">{{ money(c.quoted) }}</td>
+                <td class="num {{ 'pos' if c.profit > 0 else ('neg' if c.profit < 0) }}">{{ money(c.profit) }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="empty">No jobs in this financial year yet.</p>
+    {% endif %}
+  </section>
+</div>
 {% endblock %}

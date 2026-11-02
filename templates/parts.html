@@ -1,57 +1,65 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block title %}Parts{% endblock %}
 {% block content %}
-<h1>🔩 Parts (where to buy again)</h1>
+<div class="page-head">
+  <div>
+    <h1>Parts</h1>
+    <p class="subtitle">Items you've bought before and where to buy them again.</p>
+  </div>
+</div>
 
-<section class="panel" id="form">
-  <h2>{{ '✏️ Change this part' if editing else '➕ Add a new part' }}</h2>
-  <form method="post" class="grid-form">
-    <label>Supplier name *
+<section class="card" id="form">
+  <div class="card-head"><h2>{{ 'Edit part' if editing else 'New part' }}</h2></div>
+  <form method="post" class="form-grid">
+    <label><span>Supplier name <span class="req">*</span></span>
       <input name="supplier_name" list="supplier-list" required autocomplete="off"
              value="{{ editing.supplier_name if editing }}" placeholder="Where did you buy it?">
     </label>
     <datalist id="supplier-list">
       {% for s in suppliers %}<option value="{{ s.name }}">{% endfor %}
     </datalist>
-    <label>Item name *
+    <label><span>Item name <span class="req">*</span></span>
       <input name="item_name" required value="{{ editing.item_name if editing }}" placeholder="What is it called?">
     </label>
     <label class="wide">Item description
-      <input name="description" value="{{ editing.description if editing }}" placeholder="Size, colour, model number... (optional)">
+      <input name="description" value="{{ editing.description if editing }}" placeholder="Size, colour, model number (optional)">
     </label>
     <label class="wide">Store link
-      <input name="store_link" type="url" value="{{ editing.store_link if editing }}" placeholder="Paste the link to the item (optional)">
+      <input name="store_link" type="url" value="{{ editing.store_link if editing }}" placeholder="https://… (optional)">
     </label>
-    <div class="form-buttons">
-      <button class="btn big blue" type="submit">💾 {{ 'Save changes' if editing else 'Save part' }}</button>
+    <div class="form-actions">
+      <button class="btn primary" type="submit">{{ 'Save changes' if editing else 'Add part' }}</button>
       {% if editing %}<a class="btn" href="{{ url_for('parts') }}">Cancel</a>{% endif %}
     </div>
   </form>
-  <p class="muted">Tip: copy the link from the shop's page for this item, so you can open it again in one tap.</p>
+  <p class="hint">Tip: copy the link from the shop's page for the item, so you can open it again in one click.</p>
 </section>
 
-<section class="panel">
-  <div class="page-head">
-    <h2>📃 All parts</h2>
-    <form method="get" class="inline"><input name="q" value="{{ q }}" placeholder="🔍 Search item or supplier"></form>
+<section class="card">
+  <div class="card-head">
+    <h2>All parts <span class="count">{{ rows|length }}</span></h2>
+    <form method="get" class="toolbar">
+      <div class="search">{{ icon('search', 16) }}<input name="q" value="{{ q }}" placeholder="Search item or supplier" aria-label="Search"></div>
+    </form>
   </div>
   {% if rows %}
   <div class="table-wrap">
   <table class="table">
-    <thead><tr><th>Item</th><th>Description</th><th>Supplier</th><th>Store link</th><th></th></tr></thead>
+    <thead><tr><th>Item</th><th>Description</th><th>Supplier</th><th>Store link</th><th class="actions-col"><span class="sr-only">Actions</span></th></tr></thead>
     <tbody>
       {% for r in rows %}
       <tr>
-        <td><strong>{{ r.item_name }}</strong></td>
+        <td class="strong">{{ r.item_name }}</td>
         <td>{{ r.description or '—' }}</td>
         <td>{{ r.supplier_name }}</td>
         <td class="nowrap">
-          {% if r.store_link %}<a class="btn small" href="{{ r.store_link }}" target="_blank" rel="noopener">🛒 Buy again</a>{% else %}—{% endif %}
+          {% if r.store_link %}<a class="btn small" href="{{ r.store_link }}" target="_blank" rel="noopener">Buy again {{ icon('external', 14) }}</a>{% else %}<span class="muted">—</span>{% endif %}
         </td>
         <td class="row-actions">
-          <a class="btn small" href="{{ url_for('parts', item_id=r.id) }}#form">✏️ Edit</a>
+          <a class="icon-btn" href="{{ url_for('parts', item_id=r.id) }}#form" title="Edit" aria-label="Edit">{{ icon('edit', 16) }}</a>
           <form method="post" action="{{ url_for('delete_part', item_id=r.id) }}" onsubmit="return confirm('Delete this part?')">
-            <button class="btn small danger">🗑️</button>
+            <button class="icon-btn danger" title="Delete" aria-label="Delete">{{ icon('trash', 16) }}</button>
           </form>
         </td>
       </tr>
@@ -60,7 +68,7 @@
   </table>
   </div>
   {% else %}
-    <p class="muted">No parts here yet.</p>
+    <p class="empty">No parts found.</p>
   {% endif %}
 </section>
 {% endblock %}

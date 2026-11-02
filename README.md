@@ -2,12 +2,13 @@
 
 A very simple website you run on your own computer to keep track of:
 
-- 💰 **Sales (jobs)**: job number, job name, customer, date, quoted price, expenses, profit, paid / not yet
+- 💰 **Sales (jobs)**: job number, job name, customer, date, quoted price, expenses, profit with margin %, paid / not yet
 - 🛒 **Purchases**: what you bought (supplier, product, amount, paid / unpaid, date)
 - 🔩 **Parts**: a list of things you've bought before and where to buy them again (supplier, item name, description, store link)
 - 🧑 **Customers**: name (required), address, phone, email
 - 🏭 **Suppliers**: name (required), address, store link
-- 📊 **Dashboard**: money in, money out, and profit/loss for your financial year, month by month
+- 📊 **Dashboard**: revenue, expenses, profit, average profit margin, this month vs last month, revenue and profit goals with progress, and a monthly breakdown (income, expenses, number of jobs)
+- ⚙️ **Settings**: business name, currency, financial year, and **export all your data to CSV**
 
 ---
 
@@ -108,14 +109,20 @@ There is **no password** on this app, so only use it on your own home/office net
 
 ## 🧮 How the numbers work
 
-- **Profit** on a job = quoted price − expenses (calculated for you).
+- **Profit** on a job = quoted price − expenses (calculated for you). The **margin** in brackets = profit ÷ quoted price.
 - **Income** = quoted price of all jobs in the selected financial year (paid *and* not yet paid).
 - **Expenses** = all purchases + all job expenses in the selected financial year.
-- **Profit / Loss** = Income − Expenses.
+- **Profit / Loss** = Income − Expenses. **Net margin** = Profit ÷ Income.
+- **Avg. profit margin** = (all quoted prices − all job expenses) ÷ all quoted prices for the year.
+- **Goals**: set a revenue and/or profit goal for each financial year on the dashboard. The black marker on each bar shows where you should be by today. *On track* means you're at or ahead of it.
 - **Customers still owe me** = jobs marked *Not yet*. Tap the ⏳ button on a job to mark it ✅ Paid.
 - **Bills still to pay** = purchases marked *unpaid*. Tap the ⏳ Unpaid button on a purchase to mark it ✅ Paid.
 
 💡 A cost you typed as a job's **Expenses** should not also be added on the Purchases page, or it is counted twice.
+
+## 📤 Exporting your data
+
+Go to **Settings → Export data**. Download each list as a `.csv` file, or click **Download all (.zip)** to get every list at once. CSV files open in Excel, Google Sheets and Numbers.
 
 ## 🛠️ For developers (without Docker)
 

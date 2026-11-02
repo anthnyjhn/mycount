@@ -1,26 +1,58 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block title %}Settings{% endblock %}
 {% block content %}
-<h1>⚙️ Settings</h1>
-<section class="panel">
-  <form method="post" class="grid-form">
+<div class="page-head">
+  <div>
+    <h1>Settings</h1>
+    <p class="subtitle">Business details and data export.</p>
+  </div>
+</div>
+
+<section class="card">
+  <div class="card-head"><h2>Business details</h2></div>
+  <form method="post" class="form-grid">
     <label>Business name
       <input name="business_name" value="{{ settings.business_name }}">
     </label>
-    <label>Money sign
-      <input name="currency" value="{{ settings.currency }}" placeholder="₱, $, €, £ ...">
+    <label>Currency symbol
+      <input name="currency" value="{{ settings.currency }}" placeholder="₱, $, €, £">
     </label>
-    <label>My financial year starts in
+    <label>Financial year starts in
       <select name="fy_start_month">
         {% for m in months %}
           <option value="{{ loop.index }}" {{ 'selected' if loop.index|string == settings.fy_start_month }}>{{ m }}</option>
         {% endfor %}
       </select>
     </label>
-    <div class="form-buttons">
-      <button class="btn big blue" type="submit">💾 Save settings</button>
+    <div class="form-actions">
+      <button class="btn primary" type="submit">Save settings</button>
     </div>
   </form>
-  <p class="muted">Most businesses start their year in January. Change it if your accountant uses another month (for example April or July).</p>
+  <p class="hint">Most businesses start their year in January. Change it if your accountant uses another month, such as April or July.</p>
+</section>
+
+<section class="card">
+  <div class="card-head">
+    <div>
+      <h2>Export data</h2>
+      <p class="card-sub">Download your records as CSV files. They open in Excel, Google Sheets and Numbers.</p>
+    </div>
+    <a class="btn primary" href="{{ url_for('export_all') }}">{{ icon('download', 16) }}Download all (.zip)</a>
+  </div>
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>Data</th><th class="num">Records</th><th class="actions-col"><span class="sr-only">Download</span></th></tr></thead>
+      <tbody>
+        {% for name, (title, _headings, _sql) in exports.items() %}
+          <tr>
+            <td class="strong">{{ title }}</td>
+            <td class="num">{{ counts[name] }}</td>
+            <td class="row-actions"><a class="btn small" href="{{ url_for('export_csv', name=name) }}">{{ icon('download', 14) }}CSV</a></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </section>
 {% endblock %}
