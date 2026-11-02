@@ -1,3 +1,4 @@
+{% from "_icons.html" import icon %}
 <!doctype html>
 <html lang="en">
 <head>
@@ -7,24 +8,36 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-  <header>
-    <div class="brand">📒 {{ settings.business_name }}</div>
-    <nav>
-      {% set page = request.endpoint %}
-      <a href="{{ url_for('dashboard') }}" class="{{ 'on' if page == 'dashboard' }}">📊 Dashboard</a>
-      <a href="{{ url_for('sales') }}" class="{{ 'on' if page == 'sales' }}">💰 Sales</a>
-      <a href="{{ url_for('purchases') }}" class="{{ 'on' if page == 'purchases' }}">🛒 Purchases</a>
-      <a href="{{ url_for('parts') }}" class="{{ 'on' if page == 'parts' }}">🔩 Parts</a>
-      <a href="{{ url_for('customers') }}" class="{{ 'on' if page == 'customers' }}">🧑 Customers</a>
-      <a href="{{ url_for('suppliers') }}" class="{{ 'on' if page == 'suppliers' }}">🏭 Suppliers</a>
-      <a href="{{ url_for('settings_page') }}" class="{{ 'on' if page == 'settings_page' }}">⚙️ Settings</a>
-    </nav>
+  <header class="topbar">
+    <a class="brand" href="{{ url_for('dashboard') }}">
+      <span class="brand-mark">{{ settings.business_name[:1]|upper }}</span>
+      <span class="brand-name">{{ settings.business_name }}</span>
+    </a>
+    <span class="topbar-sub">Business tracker</span>
   </header>
-  <main>
-    {% for kind, msg in get_flashed_messages(with_categories=true) %}
-      <div class="flash {{ kind }}">{{ msg }}</div>
-    {% endfor %}
-    {% block content %}{% endblock %}
-  </main>
+  <div class="layout">
+    <nav class="sidenav" aria-label="Main">
+      {% set page = request.endpoint %}
+      {% set links = [
+        ('dashboard', 'Dashboard', 'dashboard'),
+        ('sales', 'Sales', 'sales'),
+        ('purchases', 'Purchases', 'purchases'),
+        ('parts', 'Parts', 'parts'),
+        ('customers', 'Customers', 'users'),
+        ('suppliers', 'Suppliers', 'truck'),
+        ('settings_page', 'Settings', 'settings'),
+      ] %}
+      {% for endpoint, label, ic in links %}
+        <a href="{{ url_for(endpoint) }}" class="{{ 'on' if page == endpoint }}"
+           {{ 'aria-current=page' if page == endpoint }}>{{ icon(ic) }}<span>{{ label }}</span></a>
+      {% endfor %}
+    </nav>
+    <main>
+      {% for kind, msg in get_flashed_messages(with_categories=true) %}
+        <div class="banner {{ kind }}" role="status">{{ icon('check' if kind == 'ok' else 'alert') }}<span>{{ msg }}</span></div>
+      {% endfor %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
 </body>
 </html>

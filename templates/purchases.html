@@ -1,19 +1,25 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block title %}Purchases{% endblock %}
 {% block content %}
-<h1>🛒 Purchases (things I bought)</h1>
+<div class="page-head">
+  <div>
+    <h1>Purchases</h1>
+    <p class="subtitle">Things you bought for the business and whether you've paid for them.</p>
+  </div>
+</div>
 
-<section class="panel" id="form">
-  <h2>{{ '✏️ Change this purchase' if editing else '➕ Add a new purchase' }}</h2>
-  <form method="post" class="grid-form">
-    <label>Supplier name *
+<section class="card" id="form">
+  <div class="card-head"><h2>{{ 'Edit purchase' if editing else 'New purchase' }}</h2></div>
+  <form method="post" class="form-grid">
+    <label><span>Supplier name <span class="req">*</span></span>
       <input name="supplier_name" list="supplier-list" required autocomplete="off"
              value="{{ editing.supplier_name if editing }}" placeholder="Who did you buy from?">
     </label>
     <datalist id="supplier-list">
       {% for s in suppliers %}<option value="{{ s.name }}">{% endfor %}
     </datalist>
-    <label>Product *
+    <label><span>Product <span class="req">*</span></span>
       <input name="product" list="part-list" required autocomplete="off" value="{{ editing.product if editing }}" placeholder="What did you buy?">
     </label>
     <datalist id="part-list">
@@ -25,56 +31,56 @@
     <label>Date
       <input name="date" type="date" value="{{ editing.date if editing else today }}">
     </label>
-    <fieldset class="status-pick">
-      <legend>Did you pay already?</legend>
+    <fieldset class="segmented">
+      <legend>Payment status</legend>
       {% set st = editing.status if editing else 'unpaid' %}
-      <label class="pill green"><input type="radio" name="status" value="paid" {{ 'checked' if st == 'paid' }}> ✅ Paid</label>
-      <label class="pill yellow"><input type="radio" name="status" value="unpaid" {{ 'checked' if st == 'unpaid' }}> ⏳ Not yet (unpaid)</label>
+      <label><input type="radio" name="status" value="paid" {{ 'checked' if st == 'paid' }}><span>Paid</span></label>
+      <label><input type="radio" name="status" value="unpaid" {{ 'checked' if st == 'unpaid' }}><span>Unpaid</span></label>
     </fieldset>
-    <div class="form-buttons">
-      <button class="btn big red" type="submit">💾 {{ 'Save changes' if editing else 'Save purchase' }}</button>
+    <div class="form-actions">
+      <button class="btn primary" type="submit">{{ 'Save changes' if editing else 'Add purchase' }}</button>
       {% if editing %}<a class="btn" href="{{ url_for('purchases') }}">Cancel</a>{% endif %}
     </div>
   </form>
   {% if not suppliers %}
-    <p class="muted">Tip: add shops on the <a href="{{ url_for('suppliers') }}">Suppliers</a> page and their names will pop up here.</p>
+    <p class="hint">Tip: add shops on the <a href="{{ url_for('suppliers') }}">Suppliers</a> page and their names will be suggested here.</p>
   {% endif %}
 </section>
 
-<section class="panel">
-  <div class="page-head">
-    <h2>📃 All purchases</h2>
-    <form method="get" class="inline">
-      <select name="show" onchange="this.form.submit()">
-        <option value="all" {{ 'selected' if show == 'all' }}>Show all</option>
-        <option value="unpaid" {{ 'selected' if show == 'unpaid' }}>Only unpaid ⏳</option>
-        <option value="paid" {{ 'selected' if show == 'paid' }}>Only paid ✅</option>
+<section class="card">
+  <div class="card-head">
+    <h2>All purchases <span class="count">{{ rows|length }}</span></h2>
+    <form method="get" class="toolbar">
+      <select name="show" onchange="this.form.submit()" aria-label="Payment status">
+        <option value="all" {{ 'selected' if show == 'all' }}>All statuses</option>
+        <option value="unpaid" {{ 'selected' if show == 'unpaid' }}>Unpaid</option>
+        <option value="paid" {{ 'selected' if show == 'paid' }}>Paid</option>
       </select>
-      <input name="q" value="{{ q }}" placeholder="🔍 Search supplier or product">
+      <div class="search">{{ icon('search', 16) }}<input name="q" value="{{ q }}" placeholder="Search supplier or product" aria-label="Search"></div>
     </form>
   </div>
   {% if rows %}
   <div class="table-wrap">
   <table class="table">
-    <thead><tr><th>Date</th><th>Supplier</th><th>Product</th><th class="num">Amount</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th>Date</th><th>Supplier</th><th>Product</th><th class="num">Amount</th><th>Status</th><th class="actions-col"><span class="sr-only">Actions</span></th></tr></thead>
     <tbody>
       {% for r in rows %}
       <tr>
         <td class="nowrap">{{ r.date }}</td>
         <td>{{ r.supplier_name }}</td>
         <td>{{ r.product }}</td>
-        <td class="num"><strong>{{ money(r.amount) }}</strong></td>
+        <td class="num">{{ money(r.amount) }}</td>
         <td>
           <form method="post" action="{{ url_for('toggle_purchase', item_id=r.id) }}">
-            <button class="pill {{ 'green' if r.status == 'paid' else 'yellow' }}" title="Tap to change">
-              {{ '✅ Paid' if r.status == 'paid' else '⏳ Unpaid' }}
+            <button class="badge-btn {{ 'good' if r.status == 'paid' else 'warn' }}" title="Click to change">
+              {{ 'Paid' if r.status == 'paid' else 'Unpaid' }}
             </button>
           </form>
         </td>
         <td class="row-actions">
-          <a class="btn small" href="{{ url_for('purchases', item_id=r.id) }}#form">✏️ Edit</a>
+          <a class="icon-btn" href="{{ url_for('purchases', item_id=r.id) }}#form" title="Edit" aria-label="Edit">{{ icon('edit', 16) }}</a>
           <form method="post" action="{{ url_for('delete_purchase', item_id=r.id) }}" onsubmit="return confirm('Delete this purchase?')">
-            <button class="btn small danger">🗑️</button>
+            <button class="icon-btn danger" title="Delete" aria-label="Delete">{{ icon('trash', 16) }}</button>
           </form>
         </td>
       </tr>
@@ -82,9 +88,9 @@
     </tbody>
   </table>
   </div>
-  <p class="muted">Tip: tap the Paid / Unpaid button to switch it.</p>
+  <p class="table-foot muted">Click a status to switch it between Paid and Unpaid.</p>
   {% else %}
-    <p class="muted">No purchases here yet.</p>
+    <p class="empty">No purchases found.</p>
   {% endif %}
 </section>
 {% endblock %}

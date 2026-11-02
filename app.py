@@ -1,11 +1,14 @@
 """MyCount - a very simple tool to track business growth."""
+import csv
+import io
 import os
 import re
+import zipfile
 import shutil
 import sqlite3
 from datetime import date, timedelta
 
-from flask import Flask, g, redirect, render_template, request, url_for, flash
+from flask import Flask, Response, abort, g, redirect, render_template, request, url_for, flash
 
 DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(__file__), "data", "mycount.db"))
 
@@ -50,6 +53,11 @@ CREATE TABLE IF NOT EXISTS parts (
     item_name TEXT NOT NULL,
     description TEXT DEFAULT '',
     store_link TEXT DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS goals (
+    year INTEGER PRIMARY KEY,
+    revenue REAL NOT NULL DEFAULT 0,
+    profit REAL NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
@@ -128,7 +136,29 @@ def get_settings():
 @app.context_processor
 def inject_globals():
     settings = get_settings()
-    return {"settings": settings, "money": lambda v: f"{'-' if v < 0 else ''}{settings['currency']}{abs(v):,.2f}"}
+    cur = settings["currency"]
+
+    def money(v):
+        return f"{'-' if v < 0 else ''}{cur}{abs(v):,.2f}"
+
+    def money_short(v):
+        """Short money for chart axes: 1500 -> 1.5k, 2000000 -> 2M."""
+        for size, unit in ((1e6, "M"), (1e3, "k")):
+            if abs(v) >= size:
+                return f"{cur}{v / size:,.1f}".rstrip("0").rstrip(".") + unit
+        return f"{cur}{v:,.0f}"
+
+    return {"settings": settings, "money": money, "money_short": money_short}
+
+
+def margin(profit, price):
+    """Profit as a percentage of the price, or None when there is no price."""
+    return profit / price * 100 if price else None
+
+
+@app.template_filter("pct")
+def format_pct(value, digits=0):
+    return "—" if value is None else f"{value:.{digits}f}%"
 
 
 def to_number(value, default=0.0):
@@ -163,6 +193,41 @@ def current_fy_start_year(start_month):
 
 # ---------- dashboard ----------
 
+def nice_ceiling(value):
+    """Round a chart maximum up to a tidy number (1, 2, 2.5 or 5 x 10^n)."""
+    if value <= 0:
+        return 1
+    power = 10 ** (len(str(int(value))) - 1)
+    for step in (1, 2, 2.5, 5, 10):
+        if value <= step * power:
+            return step * power
+    return 10 * power
+
+
+def year_fraction_done(first, last):
+    """How much of the financial year has passed: 0 before it starts, 1 after it ends."""
+    today = date.today()
+    if today < first:
+        return 0.0
+    if today > last:
+        return 1.0
+    return ((today - first).days + 1) / ((last - first).days + 1)
+
+
+def goal_progress(actual, target, expected_fraction):
+    if not target:
+        return None
+    percent = actual / target * 100
+    if actual >= target:
+        state = "reached"
+    elif percent >= expected_fraction * 100:
+        state = "on_track"
+    else:
+        state = "behind"
+    return {"target": target, "actual": actual, "percent": percent, "bar": max(0, min(percent, 100)),
+            "expected": expected_fraction * 100, "state": state}
+
+
 @app.route("/")
 def dashboard():
     db = get_db()
@@ -171,11 +236,12 @@ def dashboard():
     first, last, label = fy_range(year, start_month)
     params = (first.isoformat(), last.isoformat())
 
-    income, job_expenses = db.execute(
-        "SELECT COALESCE(SUM(quoted_price), 0), COALESCE(SUM(expenses), 0) FROM sales WHERE date BETWEEN ? AND ?",
-        params).fetchone()
+    income, job_expenses, job_count = db.execute(
+        "SELECT COALESCE(SUM(quoted_price), 0), COALESCE(SUM(expenses), 0), COUNT(*) FROM sales "
+        "WHERE date BETWEEN ? AND ?", params).fetchone()
     bought = db.execute("SELECT COALESCE(SUM(amount), 0) FROM purchases WHERE date BETWEEN ? AND ?", params).fetchone()[0]
     expenses = bought + job_expenses
+    profit = income - expenses
     unpaid = db.execute(
         "SELECT COALESCE(SUM(amount), 0), COUNT(*) FROM purchases WHERE status = 'unpaid' AND date BETWEEN ? AND ?",
         params).fetchone()
@@ -183,19 +249,35 @@ def dashboard():
         "SELECT COALESCE(SUM(quoted_price), 0), COUNT(*) FROM sales WHERE status = 'unpaid' AND date BETWEEN ? AND ?",
         params).fetchone()
 
-    # Month by month numbers for the little chart
+    # Month by month numbers
+    today_prefix = date.today().isoformat()[:7]
     months = []
     for i in range(12):
         m = (start_month - 1 + i) % 12 + 1
         y = year if m >= start_month else year + 1
         prefix = f"{y:04d}-{m:02d}"
-        m_in, m_job_out = db.execute(
-            "SELECT COALESCE(SUM(quoted_price), 0), COALESCE(SUM(expenses), 0) FROM sales WHERE substr(date, 1, 7) = ?",
-            (prefix,)).fetchone()
+        m_in, m_job_out, m_jobs = db.execute(
+            "SELECT COALESCE(SUM(quoted_price), 0), COALESCE(SUM(expenses), 0), COUNT(*) FROM sales "
+            "WHERE substr(date, 1, 7) = ?", (prefix,)).fetchone()
         m_bought = db.execute("SELECT COALESCE(SUM(amount), 0) FROM purchases WHERE substr(date, 1, 7) = ?",
                               (prefix,)).fetchone()[0]
-        months.append({"name": MONTHS[m - 1][:3], "year": y, "income": m_in, "expenses": m_bought + m_job_out})
-    biggest = max([1] + [max(mo["income"], mo["expenses"]) for mo in months])
+        m_out = m_bought + m_job_out
+        months.append({"name": MONTHS[m - 1][:3], "full": f"{MONTHS[m - 1]} {y}", "year": y, "income": m_in,
+                       "expenses": m_out, "profit": m_in - m_out, "jobs": m_jobs,
+                       "job_margin": margin(m_in - m_job_out, m_in), "current": prefix == today_prefix,
+                       "future": prefix > today_prefix})
+    chart_max = nice_ceiling(max([0] + [max(mo["income"], mo["expenses"]) for mo in months]))
+
+    # This month compared with last month (only while looking at the current financial year)
+    this_month = next((i for i, mo in enumerate(months) if mo["current"]), None)
+    month_now = months[this_month] if this_month is not None else None
+    month_before = months[this_month - 1] if this_month else None
+    months_so_far = sum(1 for mo in months if not mo["future"]) or 1
+
+    done = year_fraction_done(first, last)
+    goal = db.execute("SELECT revenue, profit FROM goals WHERE year = ?", (year,)).fetchone()
+    revenue_goal = goal_progress(income, goal["revenue"], done) if goal else None
+    profit_goal = goal_progress(profit, goal["profit"], done) if goal else None
 
     # Years that have data, so the year picker only shows useful choices
     years = {current_fy_start_year(start_month)}
@@ -211,10 +293,24 @@ def dashboard():
 
     return render_template(
         "dashboard.html", income=income, expenses=expenses, bought=bought, job_expenses=job_expenses,
-        profit=income - expenses, unpaid_amount=unpaid[0], unpaid_count=unpaid[1],
-        owed_amount=owed[0], owed_count=owed[1], months=months, biggest=biggest,
+        profit=profit, net_margin=margin(profit, income), job_count=job_count,
+        job_margin=margin(income - job_expenses, income),
+        avg_month_income=income / months_so_far, months_so_far=months_so_far,
+        unpaid_amount=unpaid[0], unpaid_count=unpaid[1], owed_amount=owed[0], owed_count=owed[1],
+        months=months, chart_max=chart_max, month_now=month_now, month_before=month_before,
+        goal=goal, revenue_goal=revenue_goal, profit_goal=profit_goal, year_done=done * 100,
         year=year, label=label, first=first, last=last, year_choices=year_choices,
         top_customers=top_customers)
+
+
+@app.post("/goals/<int:year>")
+def save_goals(year):
+    db = get_db()
+    db.execute("INSERT OR REPLACE INTO goals (year, revenue, profit) VALUES (?, ?, ?)",
+               (year, max(0, to_number(request.form.get("revenue"))), max(0, to_number(request.form.get("profit")))))
+    db.commit()
+    flash("Goals saved.", "ok")
+    return redirect(url_for("dashboard", year=year))
 
 
 # ---------- sales (jobs) ----------
@@ -250,11 +346,11 @@ def sales(item_id=None):
             if editing:
                 db.execute("UPDATE sales SET job_number=?, job_name=?, customer_name=?, date=?, quoted_price=?, "
                            "expenses=?, status=? WHERE id=?", values + (item_id,))
-                flash("Job updated! ✅", "ok")
+                flash("Job updated.", "ok")
             else:
                 db.execute("INSERT INTO sales (job_number, job_name, customer_name, date, quoted_price, expenses, status) "
                            "VALUES (?, ?, ?, ?, ?, ?, ?)", values)
-                flash("Job saved! 🎉", "ok")
+                flash("Job saved.", "ok")
             db.commit()
             return redirect(url_for("sales"))
 
@@ -285,7 +381,7 @@ def delete_sale(item_id):
     db = get_db()
     db.execute("DELETE FROM sales WHERE id = ?", (item_id,))
     db.commit()
-    flash("Job deleted. 🗑️", "ok")
+    flash("Job deleted.", "ok")
     return redirect(url_for("sales"))
 
 
@@ -308,11 +404,11 @@ def purchases(item_id=None):
             if editing:
                 db.execute("UPDATE purchases SET supplier_name=?, product=?, amount=?, status=?, date=? WHERE id=?",
                            values + (item_id,))
-                flash("Purchase updated! ✅", "ok")
+                flash("Purchase updated.", "ok")
             else:
                 db.execute("INSERT INTO purchases (supplier_name, product, amount, status, date) VALUES (?, ?, ?, ?, ?)",
                            values)
-                flash("Purchase saved! 🎉", "ok")
+                flash("Purchase saved.", "ok")
             db.commit()
             return redirect(url_for("purchases"))
 
@@ -344,7 +440,7 @@ def delete_purchase(item_id):
     db = get_db()
     db.execute("DELETE FROM purchases WHERE id = ?", (item_id,))
     db.commit()
-    flash("Purchase deleted. 🗑️", "ok")
+    flash("Purchase deleted.", "ok")
     return redirect(url_for("purchases"))
 
 
@@ -365,11 +461,11 @@ def parts(item_id=None):
             if editing:
                 db.execute("UPDATE parts SET supplier_name=?, item_name=?, description=?, store_link=? WHERE id=?",
                            values + (item_id,))
-                flash("Part updated! ✅", "ok")
+                flash("Part updated.", "ok")
             else:
                 db.execute("INSERT INTO parts (supplier_name, item_name, description, store_link) VALUES (?, ?, ?, ?)",
                            values)
-                flash("Part saved! 🎉", "ok")
+                flash("Part saved.", "ok")
             db.commit()
             return redirect(url_for("parts"))
 
@@ -386,17 +482,17 @@ def delete_part(item_id):
     db = get_db()
     db.execute("DELETE FROM parts WHERE id = ?", (item_id,))
     db.commit()
-    flash("Part deleted. 🗑️", "ok")
+    flash("Part deleted.", "ok")
     return redirect(url_for("parts"))
 
 
 # ---------- customers & suppliers ----------
 
 PEOPLE = {
-    "customers": {"title": "Customers", "one": "customer", "icon": "🧑", "fields": [
+    "customers": {"title": "Customers", "one": "customer", "icon": "users", "fields": [
         ("name", "Name", "text"), ("address", "Address", "text"),
         ("phone", "Phone", "tel"), ("email", "Email", "email")]},
-    "suppliers": {"title": "Suppliers", "one": "supplier", "icon": "🏭", "fields": [
+    "suppliers": {"title": "Suppliers", "one": "supplier", "icon": "truck", "fields": [
         ("name", "Name", "text"), ("address", "Address", "text"),
         ("store_link", "Store link", "url")]},
 }
@@ -415,11 +511,11 @@ def people_page(kind, item_id=None):
             if editing:
                 sets = ", ".join(f"{c} = ?" for c in columns)
                 db.execute(f"UPDATE {kind} SET {sets} WHERE id = ?", values + [item_id])
-                flash(f"{info['one'].title()} updated! ✅", "ok")
+                flash(f"{info['one'].title()} updated.", "ok")
             else:
                 db.execute(f"INSERT INTO {kind} ({', '.join(columns)}) VALUES ({', '.join('?' * len(columns))})",
                            values)
-                flash(f"{info['one'].title()} added! 🎉", "ok")
+                flash(f"{info['one'].title()} added.", "ok")
             db.commit()
             return redirect(url_for(kind))
     q = request.args.get("q", "").strip()
@@ -431,7 +527,7 @@ def people_delete(kind, item_id):
     db = get_db()
     db.execute(f"DELETE FROM {kind} WHERE id = ?", (item_id,))
     db.commit()
-    flash(f"{PEOPLE[kind]['one'].title()} deleted. 🗑️", "ok")
+    flash(f"{PEOPLE[kind]['one'].title()} deleted.", "ok")
     return redirect(url_for(kind))
 
 
@@ -472,9 +568,61 @@ def settings_page():
         for key, value in new.items():
             db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
         db.commit()
-        flash("Settings saved! ✅", "ok")
+        flash("Settings saved.", "ok")
         return redirect(url_for("settings_page"))
-    return render_template("settings.html", months=MONTHS)
+    counts = {name: db.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0] for name in EXPORTS}
+    return render_template("settings.html", months=MONTHS, exports=EXPORTS, counts=counts)
+
+
+# ---------- export to CSV ----------
+
+# file name -> (title, column headings, SQL)
+EXPORTS = {
+    "sales": ("Sales (jobs)",
+              ["Job number", "Job name", "Customer", "Date", "Quoted price", "Expenses", "Profit",
+               "Profit margin %", "Payment status"],
+              "SELECT job_number, job_name, customer_name, date, quoted_price, expenses, "
+              "quoted_price - expenses AS profit, "
+              "CASE WHEN quoted_price > 0 THEN ROUND((quoted_price - expenses) * 100.0 / quoted_price, 1) END, "
+              "CASE status WHEN 'paid' THEN 'Paid' ELSE 'Not yet' END FROM sales ORDER BY date, id"),
+    "purchases": ("Purchases", ["Supplier", "Product", "Amount", "Status", "Date"],
+                  "SELECT supplier_name, product, amount, CASE status WHEN 'paid' THEN 'Paid' ELSE 'Unpaid' END, date "
+                  "FROM purchases ORDER BY date, id"),
+    "parts": ("Parts", ["Supplier", "Item name", "Item description", "Store link"],
+              "SELECT supplier_name, item_name, description, store_link FROM parts ORDER BY item_name"),
+    "customers": ("Customers", ["Name", "Address", "Phone", "Email"],
+                  "SELECT name, address, phone, email FROM customers ORDER BY name"),
+    "suppliers": ("Suppliers", ["Name", "Address", "Store link"],
+                  "SELECT name, address, store_link FROM suppliers ORDER BY name"),
+}
+
+
+def make_csv(name):
+    _title, headings, sql = EXPORTS[name]
+    out = io.StringIO()
+    out.write("\ufeff")  # lets Excel show the money sign and accents correctly
+    writer = csv.writer(out)
+    writer.writerow(headings)
+    writer.writerows(get_db().execute(sql).fetchall())
+    return out.getvalue()
+
+
+@app.get("/export/<name>.csv")
+def export_csv(name):
+    if name not in EXPORTS:
+        abort(404)
+    return Response(make_csv(name), mimetype="text/csv",
+                    headers={"Content-Disposition": f"attachment; filename=mycount-{name}-{date.today()}.csv"})
+
+
+@app.get("/export/all.zip")
+def export_all():
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name in EXPORTS:
+            zf.writestr(f"mycount-{name}-{date.today()}.csv", make_csv(name).encode("utf-8"))
+    return Response(buffer.getvalue(), mimetype="application/zip",
+                    headers={"Content-Disposition": f"attachment; filename=mycount-all-data-{date.today()}.zip"})
 
 
 init_db()
