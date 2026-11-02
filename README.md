@@ -4,6 +4,7 @@ A very simple website you run on your own computer to keep track of:
 
 - 💰 **Sales (jobs)**: job number, job name, customer, date, quoted price, expenses, profit, paid / not yet
 - 🛒 **Purchases**: what you bought (supplier, product, amount, paid / unpaid, date)
+- 🔩 **Parts**: a list of things you've bought before and where to buy them again (supplier, item name, description, store link)
 - 🧑 **Customers**: name (required), address, phone, email
 - 🏭 **Suppliers**: name (required), address, store link
 - 📊 **Dashboard**: money in, money out, and profit/loss for your financial year, month by month

@@ -44,6 +44,13 @@ CREATE TABLE IF NOT EXISTS purchases (
     status TEXT NOT NULL DEFAULT 'unpaid',
     date TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS parts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    supplier_name TEXT NOT NULL,
+    item_name TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    store_link TEXT DEFAULT ''
+);
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -318,7 +325,8 @@ def purchases(item_id=None):
         args.append(show)
     rows = db.execute(sql + " ORDER BY date DESC, id DESC", args).fetchall()
     suppliers = db.execute("SELECT name FROM suppliers ORDER BY name").fetchall()
-    return render_template("purchases.html", rows=rows, suppliers=suppliers, editing=editing, q=q, show=show,
+    parts = db.execute("SELECT DISTINCT item_name FROM parts ORDER BY item_name").fetchall()
+    return render_template("purchases.html", rows=rows, suppliers=suppliers, parts=parts, editing=editing, q=q, show=show,
                            today=date.today().isoformat())
 
 
@@ -338,6 +346,48 @@ def delete_purchase(item_id):
     db.commit()
     flash("Purchase deleted. 🗑️", "ok")
     return redirect(url_for("purchases"))
+
+
+# ---------- parts (where to buy things again) ----------
+
+@app.route("/parts", methods=["GET", "POST"])
+@app.route("/parts/<int:item_id>/edit", methods=["GET", "POST"])
+def parts(item_id=None):
+    db = get_db()
+    editing = db.execute("SELECT * FROM parts WHERE id = ?", (item_id,)).fetchone() if item_id else None
+    if request.method == "POST":
+        supplier, item = form_text("supplier_name"), form_text("item_name")
+        description, link = form_text("description"), form_text("store_link")
+        if not supplier or not item:
+            flash("Please type the supplier name and the item name.", "error")
+        else:
+            values = (supplier, item, description, link)
+            if editing:
+                db.execute("UPDATE parts SET supplier_name=?, item_name=?, description=?, store_link=? WHERE id=?",
+                           values + (item_id,))
+                flash("Part updated! ✅", "ok")
+            else:
+                db.execute("INSERT INTO parts (supplier_name, item_name, description, store_link) VALUES (?, ?, ?, ?)",
+                           values)
+                flash("Part saved! 🎉", "ok")
+            db.commit()
+            return redirect(url_for("parts"))
+
+    q = request.args.get("q", "").strip()
+    rows = db.execute(
+        "SELECT * FROM parts WHERE item_name LIKE ? OR description LIKE ? OR supplier_name LIKE ? "
+        "ORDER BY item_name, supplier_name", (f"%{q}%",) * 3).fetchall()
+    suppliers = db.execute("SELECT name FROM suppliers ORDER BY name").fetchall()
+    return render_template("parts.html", rows=rows, suppliers=suppliers, editing=editing, q=q)
+
+
+@app.post("/parts/<int:item_id>/delete")
+def delete_part(item_id):
+    db = get_db()
+    db.execute("DELETE FROM parts WHERE id = ?", (item_id,))
+    db.commit()
+    flash("Part deleted. 🗑️", "ok")
+    return redirect(url_for("parts"))
 
 
 # ---------- customers & suppliers ----------

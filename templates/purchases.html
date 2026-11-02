@@ -14,8 +14,11 @@
       {% for s in suppliers %}<option value="{{ s.name }}">{% endfor %}
     </datalist>
     <label>Product *
-      <input name="product" required value="{{ editing.product if editing }}" placeholder="What did you buy?">
+      <input name="product" list="part-list" required autocomplete="off" value="{{ editing.product if editing }}" placeholder="What did you buy?">
     </label>
+    <datalist id="part-list">
+      {% for p in parts %}<option value="{{ p.item_name }}">{% endfor %}
+    </datalist>
     <label>Amount
       <input name="amount" type="number" step="0.01" min="0" value="{{ editing.amount if editing }}" placeholder="0.00">
     </label>

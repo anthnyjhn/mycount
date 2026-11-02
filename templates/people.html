@@ -43,7 +43,7 @@
         {% endfor %}
         <td class="row-actions">
           <a class="btn small" href="{{ url_for(kind, item_id=r.id) }}#form">✏️ Edit</a>
-          <form method="post" action="{{ url_for('delete_' ~ info.one, item_id=r.id) }}" onsubmit="return confirm('Delete {{ r.name }}?')">
+          <form method="post" action="{{ url_for('delete_' ~ info.one, item_id=r.id) }}" onsubmit="return confirm('Delete this {{ info.one }}?')">
             <button class="btn small danger">🗑️</button>
           </form>
         </td>
