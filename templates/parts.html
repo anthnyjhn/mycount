@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Parts{% endblock %}
+{% block content %}
+<h1>🔩 Parts (where to buy again)</h1>
+
+<section class="panel" id="form">
+  <h2>{{ '✏️ Change this part' if editing else '➕ Add a new part' }}</h2>
+  <form method="post" class="grid-form">
+    <label>Supplier name *
+      <input name="supplier_name" list="supplier-list" required autocomplete="off"
+             value="{{ editing.supplier_name if editing }}" placeholder="Where did you buy it?">
+    </label>
+    <datalist id="supplier-list">
+      {% for s in suppliers %}<option value="{{ s.name }}">{% endfor %}
+    </datalist>
+    <label>Item name *
+      <input name="item_name" required value="{{ editing.item_name if editing }}" placeholder="What is it called?">
+    </label>
+    <label class="wide">Item description
+      <input name="description" value="{{ editing.description if editing }}" placeholder="Size, colour, model number... (optional)">
+    </label>
+    <label class="wide">Store link
+      <input name="store_link" type="url" value="{{ editing.store_link if editing }}" placeholder="Paste the link to the item (optional)">
+    </label>
+    <div class="form-buttons">
+      <button class="btn big blue" type="submit">💾 {{ 'Save changes' if editing else 'Save part' }}</button>
+      {% if editing %}<a class="btn" href="{{ url_for('parts') }}">Cancel</a>{% endif %}
+    </div>
+  </form>
+  <p class="muted">Tip: copy the link from the shop's page for this item, so you can open it again in one tap.</p>
+</section>
+
+<section class="panel">
+  <div class="page-head">
+    <h2>📃 All parts</h2>
+    <form method="get" class="inline"><input name="q" value="{{ q }}" placeholder="🔍 Search item or supplier"></form>
+  </div>
+  {% if rows %}
+  <div class="table-wrap">
+  <table class="table">
+    <thead><tr><th>Item</th><th>Description</th><th>Supplier</th><th>Store link</th><th></th></tr></thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td><strong>{{ r.item_name }}</strong></td>
+        <td>{{ r.description or '—' }}</td>
+        <td>{{ r.supplier_name }}</td>
+        <td class="nowrap">
+          {% if r.store_link %}<a class="btn small" href="{{ r.store_link }}" target="_blank" rel="noopener">🛒 Buy again</a>{% else %}—{% endif %}
+        </td>
+        <td class="row-actions">
+          <a class="btn small" href="{{ url_for('parts', item_id=r.id) }}#form">✏️ Edit</a>
+          <form method="post" action="{{ url_for('delete_part', item_id=r.id) }}" onsubmit="return confirm('Delete this part?')">
+            <button class="btn small danger">🗑️</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+    <p class="muted">No parts here yet.</p>
+  {% endif %}
+</section>
+{% endblock %}
