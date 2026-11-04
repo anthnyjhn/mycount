@@ -340,6 +340,29 @@ def next_job_number(db):
     return row[0][:match.start()] + bumped + row[0][match.end():]
 
 
+# column -> (how to read the value from a job, first click order)
+SORTS = {
+    "job_number": (lambda r: natural_key(r["job_number"]), "asc"),
+    "job_name": (lambda r: r["job_name"].lower(), "asc"),
+    "customer": (lambda r: r["customer_name"].lower(), "asc"),
+    "date": (lambda r: (r["date"], r["id"]), "desc"),
+    "quoted": (lambda r: r["quoted_price"], "desc"),
+    "profit": (lambda r: r["quoted_price"] - r["expenses"], "desc"),
+}
+
+
+def natural_key(text):
+    """Sort job numbers the way people read them: J-9 before J-10."""
+    return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", text)]
+
+
+def sort_jobs(rows, sort, direction):
+    # Jobs without a job number always go at the bottom when sorting by job number
+    blank = [r for r in rows if sort == "job_number" and not r["job_number"]]
+    rest = [r for r in rows if sort != "job_number" or r["job_number"]]
+    return sorted(rest, key=SORTS[sort][0], reverse=direction == "desc") + blank
+
+
 @app.route("/sales", methods=["GET", "POST"])
 @app.route("/sales/<int:item_id>/edit", methods=["GET", "POST"])
 def sales(item_id=None):
@@ -379,10 +402,43 @@ def sales(item_id=None):
         sql += " AND stage = ?"
         args.append(stage)
     rows = db.execute(sql + " ORDER BY date DESC, id DESC", args).fetchall()
-    stage_counts = dict(db.execute("SELECT stage, COUNT(*) FROM sales GROUP BY stage").fetchall())
+
+    sort, direction = request.args.get("sort", "date"), request.args.get("dir")
+    if "order" in request.args:  # the "Sort by" dropdown sends both in one value, e.g. job_number-asc
+        sort, _, direction = request.args["order"].rpartition("-")
+    if sort not in SORTS:
+        sort = "date"
+    if direction not in ("asc", "desc"):
+        direction = SORTS[sort][1]
+    rows = sort_jobs(rows, sort, direction)
+
+    # Counts and totals for the overview at the top of the page (all jobs, not just the filtered list)
+    stage_counts = {key: {"count": 0, "total": 0} for key in STAGES}
+    for key, count, total in db.execute("SELECT stage, COUNT(*), SUM(quoted_price) FROM sales GROUP BY stage"):
+        stage_counts[key] = {"count": count, "total": total}
+    pay_counts = {key: {"count": 0, "total": 0} for key in ("paid", "unpaid")}
+    for key, count, total in db.execute("SELECT status, COUNT(*), SUM(quoted_price) FROM sales GROUP BY status"):
+        pay_counts[key] = {"count": count, "total": total}
+
+    current = {"q": q, "show": show, "stage": stage, "sort": sort, "dir": direction}
+
+    def link(**changes):
+        """URL for this page keeping the current search, filters and sort, with some of them changed."""
+        params = {k: v for k, v in {**current, **changes}.items() if v and v != "all"}
+        if params.get("sort") == "date" and params.get("dir") == SORTS["date"][1]:
+            params.pop("sort"), params.pop("dir")
+        return url_for("sales", **params)
+
+    def sort_link(column):
+        """Clicking a column heading sorts by it; clicking it again flips the order."""
+        if column == sort:
+            return link(sort=column, dir="asc" if direction == "desc" else "desc")
+        return link(sort=column, dir=SORTS[column][1])
+
     customers = db.execute("SELECT name FROM customers ORDER BY name").fetchall()
     return render_template("sales.html", rows=rows, customers=customers, editing=editing, q=q, show=show,
-                           stage=stage, stages=STAGES, stage_counts=stage_counts,
+                           stage=stage, stages=STAGES, stage_counts=stage_counts, pay_counts=pay_counts,
+                           sort=sort, direction=direction, link=link, sort_link=sort_link,
                            today=date.today().isoformat(), next_number=next_job_number(db))
 
 

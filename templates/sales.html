@@ -9,6 +9,39 @@
   </div>
 </div>
 
+{% set job_total = stage_counts.values()|sum(attribute='count') %}
+<section class="card overview" aria-label="Jobs overview">
+  <div class="overview-group">
+    <h2 class="overview-title">Job status</h2>
+    <div class="tiles tiles-4">
+      {% for value, label in stages.items() %}
+        {% set sc = stage_counts[value] %}
+        <a class="tile {{ 'on' if stage == value }}" href="{{ link(stage='all' if stage == value else value) }}"
+           title="{{ 'Show all jobs' if stage == value else 'Show only ' ~ label }}">
+          <span class="tile-label"><i class="dot {{ value }}"></i>{{ label }}</span>
+          <span class="tile-count">{{ sc.count }}</span>
+          <span class="tile-note">{{ money(sc.total or 0) }}</span>
+        </a>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="overview-group">
+    <h2 class="overview-title">Payment status</h2>
+    <div class="tiles tiles-2">
+      {% for value, label in [('paid', 'Paid'), ('unpaid', 'Not yet paid')] %}
+        {% set pc = pay_counts[value] %}
+        <a class="tile {{ 'on' if show == value }}" href="{{ link(show='all' if show == value else value) }}"
+           title="{{ 'Show all jobs' if show == value else 'Show only ' ~ label }}">
+          <span class="tile-label"><i class="dot {{ value }}"></i>{{ label }}</span>
+          <span class="tile-count">{{ pc.count }}</span>
+          <span class="tile-note">{{ money(pc.total or 0) }}</span>
+        </a>
+      {% endfor %}
+    </div>
+  </div>
+  <p class="overview-foot muted">{{ job_total }} job{{ '' if job_total == 1 else 's' }} in total. Amounts are quoted prices. Click a box to show only those jobs, and click it again to show all.</p>
+</section>
+
 <section class="card" id="form">
   <div class="card-head"><h2>{{ 'Edit job' if editing else 'New job' }}</h2></div>
   <form method="post" class="form-grid">
@@ -67,7 +100,7 @@
       <select name="stage" onchange="this.form.submit()" aria-label="Job status">
         <option value="all" {{ 'selected' if stage == 'all' }}>All job statuses</option>
         {% for value, label in stages.items() %}
-          <option value="{{ value }}" {{ 'selected' if stage == value }}>{{ label }} ({{ stage_counts.get(value, 0) }})</option>
+          <option value="{{ value }}" {{ 'selected' if stage == value }}>{{ label }} ({{ stage_counts[value].count }})</option>
         {% endfor %}
       </select>
       <select name="show" onchange="this.form.submit()" aria-label="Payment status">
@@ -75,13 +108,29 @@
         <option value="unpaid" {{ 'selected' if show == 'unpaid' }}>Not yet paid</option>
         <option value="paid" {{ 'selected' if show == 'paid' }}>Paid</option>
       </select>
+      <select name="order" onchange="this.form.submit()" aria-label="Sort by">
+        {% for value, label in [('date-desc', 'Newest first'), ('date-asc', 'Oldest first'),
+                                ('job_number-asc', 'Job number: low to high'), ('job_number-desc', 'Job number: high to low'),
+                                ('customer-asc', 'Customer: A to Z'), ('quoted-desc', 'Highest price first'),
+                                ('profit-desc', 'Highest profit first')] %}
+          <option value="{{ value }}" {{ 'selected' if value == sort ~ '-' ~ direction }}>Sort: {{ label }}</option>
+        {% endfor %}
+        {% if (sort ~ '-' ~ direction) not in ['date-desc', 'date-asc', 'job_number-asc', 'job_number-desc', 'customer-asc', 'quoted-desc', 'profit-desc'] %}
+          <option value="{{ sort }}-{{ direction }}" selected>Sort: by column</option>
+        {% endif %}
+      </select>
       <div class="search">{{ icon('search', 16) }}<input name="q" value="{{ q }}" placeholder="Search job or customer" aria-label="Search"></div>
     </form>
   </div>
   {% if rows %}
   <div class="table-wrap">
   <table class="table">
-    <thead><tr><th>Job #</th><th>Job name</th><th>Customer</th><th>Date</th><th class="num">Quoted price</th><th class="num">Expenses</th><th class="num">Profit</th><th>Job status</th><th>Payment</th><th class="actions-col"><span class="sr-only">Actions</span></th></tr></thead>
+    {% macro sort_th(column, label, cls='') -%}
+      <th class="{{ cls }}" aria-sort="{{ ('ascending' if direction == 'asc' else 'descending') if sort == column else 'none' }}">
+        <a class="sort-link {{ 'on' if sort == column }}" href="{{ sort_link(column) }}">{{ label }}<span class="sort-arrow" aria-hidden="true">{{ ('↑' if direction == 'asc' else '↓') if sort == column else '↕' }}</span></a>
+      </th>
+    {%- endmacro %}
+    <thead><tr>{{ sort_th('job_number', 'Job #') }}{{ sort_th('job_name', 'Job name') }}{{ sort_th('customer', 'Customer') }}{{ sort_th('date', 'Date') }}{{ sort_th('quoted', 'Quoted price', 'num') }}<th class="num">Expenses</th>{{ sort_th('profit', 'Profit', 'num') }}<th>Job status</th><th>Payment</th><th class="actions-col"><span class="sr-only">Actions</span></th></tr></thead>
     <tbody>
       {% for r in rows %}
       {% set p = r.quoted_price - r.expenses %}
@@ -117,7 +166,7 @@
     </tbody>
   </table>
   </div>
-  <p class="table-foot muted">Click a job status to move it along (New job → Pending → Awaiting payment → Done). Click a payment status to switch it between Paid and Not yet.</p>
+  <p class="table-foot muted">Click a column heading to sort by it. Click a job status to move it along (New job → Pending → Awaiting payment → Done). Click a payment status to switch it between Paid and Not yet.</p>
   {% else %}
     <p class="empty">No jobs found.</p>
   {% endif %}
