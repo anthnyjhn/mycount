@@ -5,7 +5,7 @@
 <div class="page-head">
   <div>
     <h1>Sales</h1>
-    <p class="subtitle">Every job you do, what you charged, what it cost and whether you've been paid.</p>
+    <p class="subtitle">Every job you do, how far along it is, what you charged, what it cost and whether you've been paid.</p>
   </div>
 </div>
 
@@ -41,6 +41,13 @@
       <span class="readout-value"><span id="profit">{{ money(p) }}</span> <span class="readout-pct" id="margin">{{ '(' ~ (mg|pct(0)) ~ ')' if mg is not none }}</span></span>
     </div>
     <fieldset class="segmented">
+      <legend>Job status</legend>
+      {% set sg = editing.stage if editing else 'new' %}
+      {% for value, label in stages.items() %}
+        <label><input type="radio" name="stage" value="{{ value }}" {{ 'checked' if sg == value }}><span>{{ label }}</span></label>
+      {% endfor %}
+    </fieldset>
+    <fieldset class="segmented">
       <legend>Payment status</legend>
       {% set st = editing.status if editing else 'unpaid' %}
       <label><input type="radio" name="status" value="paid" {{ 'checked' if st == 'paid' }}><span>Paid</span></label>
@@ -57,8 +64,14 @@
   <div class="card-head">
     <h2>All jobs <span class="count">{{ rows|length }}</span></h2>
     <form method="get" class="toolbar">
+      <select name="stage" onchange="this.form.submit()" aria-label="Job status">
+        <option value="all" {{ 'selected' if stage == 'all' }}>All job statuses</option>
+        {% for value, label in stages.items() %}
+          <option value="{{ value }}" {{ 'selected' if stage == value }}>{{ label }} ({{ stage_counts.get(value, 0) }})</option>
+        {% endfor %}
+      </select>
       <select name="show" onchange="this.form.submit()" aria-label="Payment status">
-        <option value="all" {{ 'selected' if show == 'all' }}>All statuses</option>
+        <option value="all" {{ 'selected' if show == 'all' }}>All payments</option>
         <option value="unpaid" {{ 'selected' if show == 'unpaid' }}>Not yet paid</option>
         <option value="paid" {{ 'selected' if show == 'paid' }}>Paid</option>
       </select>
@@ -68,7 +81,7 @@
   {% if rows %}
   <div class="table-wrap">
   <table class="table">
-    <thead><tr><th>Job #</th><th>Job name</th><th>Customer</th><th>Date</th><th class="num">Quoted price</th><th class="num">Expenses</th><th class="num">Profit</th><th>Payment</th><th class="actions-col"><span class="sr-only">Actions</span></th></tr></thead>
+    <thead><tr><th>Job #</th><th>Job name</th><th>Customer</th><th>Date</th><th class="num">Quoted price</th><th class="num">Expenses</th><th class="num">Profit</th><th>Job status</th><th>Payment</th><th class="actions-col"><span class="sr-only">Actions</span></th></tr></thead>
     <tbody>
       {% for r in rows %}
       {% set p = r.quoted_price - r.expenses %}
@@ -81,6 +94,11 @@
         <td class="num">{{ money(r.quoted_price) }}</td>
         <td class="num">{{ money(r.expenses) }}</td>
         <td class="num {{ 'pos' if p > 0 else ('neg' if p < 0) }}">{{ money(p) }}{% if mg is not none %} <span class="pct">({{ mg|pct(0) }})</span>{% endif %}</td>
+        <td>
+          <form method="post" action="{{ url_for('next_stage', item_id=r.id) }}">
+            <button class="badge-btn stage {{ r.stage }}" title="Click to move to the next status">{{ stages[r.stage] }}</button>
+          </form>
+        </td>
         <td>
           <form method="post" action="{{ url_for('toggle_sale', item_id=r.id) }}">
             <button class="badge-btn {{ 'good' if r.status == 'paid' else 'warn' }}" title="Click to change">
@@ -99,7 +117,7 @@
     </tbody>
   </table>
   </div>
-  <p class="table-foot muted">Click a payment status to switch it between Paid and Not yet.</p>
+  <p class="table-foot muted">Click a job status to move it along (New job → Pending → Done). Click a payment status to switch it between Paid and Not yet.</p>
   {% else %}
     <p class="empty">No jobs found.</p>
   {% endif %}
