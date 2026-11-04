@@ -37,7 +37,8 @@ CREATE TABLE IF NOT EXISTS sales (
     date TEXT NOT NULL,
     quoted_price REAL NOT NULL DEFAULT 0,
     expenses REAL NOT NULL DEFAULT 0,
-    status TEXT NOT NULL DEFAULT 'paid'
+    status TEXT NOT NULL DEFAULT 'paid',
+    stage TEXT NOT NULL DEFAULT 'new'
 );
 CREATE TABLE IF NOT EXISTS purchases (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -111,12 +112,20 @@ def upgrade_sales_to_jobs(db):
     db.execute("ALTER TABLE sales ADD COLUMN status TEXT NOT NULL DEFAULT 'paid'")
 
 
+def add_job_stage(db):
+    """Give jobs saved before job statuses existed the status "done"."""
+    columns = [row[1] for row in db.execute("PRAGMA table_info(sales)")]
+    if columns and "stage" not in columns:
+        db.execute("ALTER TABLE sales ADD COLUMN stage TEXT NOT NULL DEFAULT 'done'")
+
+
 def init_db():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     db = sqlite3.connect(DB_PATH, isolation_level=None)
     # Lock the database so two app workers starting together don't upgrade it twice
     db.execute("BEGIN IMMEDIATE")
     upgrade_sales_to_jobs(db)
+    add_job_stage(db)
     for statement in SCHEMA.split(";"):
         if statement.strip():
             db.execute(statement)
@@ -315,6 +324,9 @@ def save_goals(year):
 
 # ---------- sales (jobs) ----------
 
+# Job status: what the form and table show, in the order a job goes through them
+STAGES = {"new": "New job", "pending": "Pending", "done": "Done"}
+
 def next_job_number(db):
     """Guess the next job number from the last one typed: 7 -> 8, J-009 -> J-010."""
     row = db.execute("SELECT job_number FROM sales WHERE job_number != '' ORDER BY id DESC LIMIT 1").fetchone()
@@ -338,18 +350,19 @@ def sales(item_id=None):
         quoted = to_number(request.form.get("quoted_price"))
         job_expenses = to_number(request.form.get("expenses"))
         status = "paid" if request.form.get("status") == "paid" else "unpaid"
+        stage = request.form.get("stage") if request.form.get("stage") in STAGES else "new"
         job_date = form_text("date") or date.today().isoformat()
         if not job_name or not customer:
             flash("Please type the job name and the customer name.", "error")
         else:
-            values = (job_number, job_name, customer, job_date, quoted, job_expenses, status)
+            values = (job_number, job_name, customer, job_date, quoted, job_expenses, status, stage)
             if editing:
                 db.execute("UPDATE sales SET job_number=?, job_name=?, customer_name=?, date=?, quoted_price=?, "
-                           "expenses=?, status=? WHERE id=?", values + (item_id,))
+                           "expenses=?, status=?, stage=? WHERE id=?", values + (item_id,))
                 flash("Job updated.", "ok")
             else:
-                db.execute("INSERT INTO sales (job_number, job_name, customer_name, date, quoted_price, expenses, status) "
-                           "VALUES (?, ?, ?, ?, ?, ?, ?)", values)
+                db.execute("INSERT INTO sales (job_number, job_name, customer_name, date, quoted_price, expenses, "
+                           "status, stage) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", values)
                 flash("Job saved.", "ok")
             db.commit()
             return redirect(url_for("sales"))
@@ -361,9 +374,15 @@ def sales(item_id=None):
     if show in ("paid", "unpaid"):
         sql += " AND status = ?"
         args.append(show)
+    stage = request.args.get("stage", "all")
+    if stage in STAGES:
+        sql += " AND stage = ?"
+        args.append(stage)
     rows = db.execute(sql + " ORDER BY date DESC, id DESC", args).fetchall()
+    stage_counts = dict(db.execute("SELECT stage, COUNT(*) FROM sales GROUP BY stage").fetchall())
     customers = db.execute("SELECT name FROM customers ORDER BY name").fetchall()
     return render_template("sales.html", rows=rows, customers=customers, editing=editing, q=q, show=show,
+                           stage=stage, stages=STAGES, stage_counts=stage_counts,
                            today=date.today().isoformat(), next_number=next_job_number(db))
 
 
@@ -372,6 +391,16 @@ def toggle_sale(item_id):
     db = get_db()
     db.execute("UPDATE sales SET status = CASE status WHEN 'paid' THEN 'unpaid' ELSE 'paid' END WHERE id = ?",
                (item_id,))
+    db.commit()
+    return redirect(request.referrer or url_for("sales"))
+
+
+@app.post("/sales/<int:item_id>/stage")
+def next_stage(item_id):
+    """Move a job on to its next status: New job -> Pending -> Done -> New job."""
+    db = get_db()
+    db.execute("UPDATE sales SET stage = CASE stage WHEN 'new' THEN 'pending' WHEN 'pending' THEN 'done' ELSE 'new' END "
+               "WHERE id = ?", (item_id,))
     db.commit()
     return redirect(request.referrer or url_for("sales"))
 
@@ -580,10 +609,11 @@ def settings_page():
 EXPORTS = {
     "sales": ("Sales (jobs)",
               ["Job number", "Job name", "Customer", "Date", "Quoted price", "Expenses", "Profit",
-               "Profit margin %", "Payment status"],
+               "Profit margin %", "Job status", "Payment status"],
               "SELECT job_number, job_name, customer_name, date, quoted_price, expenses, "
               "quoted_price - expenses AS profit, "
               "CASE WHEN quoted_price > 0 THEN ROUND((quoted_price - expenses) * 100.0 / quoted_price, 1) END, "
+              "CASE stage WHEN 'new' THEN 'New job' WHEN 'pending' THEN 'Pending' ELSE 'Done' END, "
               "CASE status WHEN 'paid' THEN 'Paid' ELSE 'Not yet' END FROM sales ORDER BY date, id"),
     "purchases": ("Purchases", ["Supplier", "Product", "Amount", "Status", "Date"],
                   "SELECT supplier_name, product, amount, CASE status WHEN 'paid' THEN 'Paid' ELSE 'Unpaid' END, date "

@@ -2,7 +2,7 @@
 
 A very simple website you run on your own computer to keep track of:
 
-- 💰 **Sales (jobs)**: job number, job name, customer, date, quoted price, expenses, profit with margin %, paid / not yet
+- 💰 **Sales (jobs)**: job number, job name, customer, date, quoted price, expenses, profit with margin %, job status (new job / pending / done), paid / not yet
 - 🛒 **Purchases**: what you bought (supplier, product, amount, paid / unpaid, date)
 - 🔩 **Parts**: a list of things you've bought before and where to buy them again (supplier, item name, description, store link)
 - 🧑 **Customers**: name (required), address, phone, email
@@ -115,6 +115,7 @@ There is **no password** on this app, so only use it on your own home/office net
 - **Profit / Loss** = Income − Expenses. **Net margin** = Profit ÷ Income.
 - **Avg. profit margin** = (all quoted prices − all job expenses) ÷ all quoted prices for the year.
 - **Goals**: set a revenue and/or profit goal for each financial year on the dashboard. The black marker on each bar shows where you should be by today. *On track* means you're at or ahead of it.
+- **Job status** (New job → Pending → Done) shows how far along a job is. It doesn't change any money numbers: a job counts as income from its date, whatever its status.
 - **Customers still owe me** = jobs marked *Not yet*. Tap the ⏳ button on a job to mark it ✅ Paid.
 - **Bills still to pay** = purchases marked *unpaid*. Tap the ⏳ Unpaid button on a purchase to mark it ✅ Paid.
 

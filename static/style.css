@@ -153,6 +153,13 @@ main { flex: 1; min-width: 0; padding: 28px 32px 64px; max-width: 1280px; }
 .warn { background: var(--warn-bg); color: var(--warn); border-color: var(--warn-border); }
 .info { background: var(--info-bg); color: var(--info); border-color: var(--info-border); }
 
+/* job status: a neutral pill with a coloured dot, so it doesn't look like the payment badge */
+.stage { background: var(--surface); color: var(--text-2); border-color: var(--border-strong); }
+.stage::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.stage.new::before { background: var(--info); }
+.stage.pending::before { background: #c98a12; }
+.stage.done::before { background: var(--good); }
+
 /* ---------- forms ---------- */
 .form-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; align-items: end; }
 .form-row { display: grid; grid-template-columns: repeat(2, minmax(0, 220px)) auto; gap: 16px; align-items: end; margin-top: 4px; }
@@ -186,7 +193,8 @@ input:focus, select:focus { outline: none; border-color: var(--focus); box-shado
   border: 1px solid var(--border-strong); background: var(--surface); color: var(--text-2); font-size: 14px; font-weight: 500;
 }
 .segmented label:first-of-type span { border-radius: 6px 0 0 6px; }
-.segmented label:last-of-type span { border-radius: 0 6px 6px 0; margin-left: -1px; }
+.segmented label + label span { margin-left: -1px; }
+.segmented label:last-of-type span { border-radius: 0 6px 6px 0; }
 .segmented input:checked + span { background: var(--primary); border-color: var(--primary); color: #fff; font-weight: 600; }
 .segmented input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 2px; }
 
