@@ -2,7 +2,7 @@
 
 A very simple website you run on your own computer to keep track of:
 
-- 💰 **Sales (jobs)**: job number, job name, customer, date, quoted price, expenses, profit with margin %, job status (new job / pending / awaiting payment / done), paid / not yet
+- 💰 **Sales (jobs)**: job number, job name, customer, date, quoted price, expenses, profit with margin %, job status (new job / pending / awaiting payment / done), paid / not yet. An overview at the top counts jobs by job status and payment status, and the list can be sorted by job number, date, customer, price or profit
 - 🛒 **Purchases**: what you bought (supplier, product, amount, paid / unpaid, date)
 - 🔩 **Parts**: a list of things you've bought before and where to buy them again (supplier, item name, description, store link)
 - 🧑 **Customers**: name (required), address, phone, email
