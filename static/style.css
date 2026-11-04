@@ -158,6 +158,7 @@ main { flex: 1; min-width: 0; padding: 28px 32px 64px; max-width: 1280px; }
 .stage::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 .stage.new::before { background: var(--info); }
 .stage.pending::before { background: #c98a12; }
+.stage.awaiting::before { background: var(--accent); }
 .stage.done::before { background: var(--good); }
 
 /* ---------- forms ---------- */
@@ -186,10 +187,11 @@ input:focus, select:focus { outline: none; border-color: var(--focus); box-shado
 
 .segmented { display: flex; border: 0; margin: 0; padding: 0; min-width: 0; }
 .segmented legend { padding: 0; margin-bottom: 6px; font-size: 13px; font-weight: 600; color: var(--text-2); }
-.segmented label { display: block; flex: 1; }
+.segmented label { display: block; flex: 1 1 auto; }
 .segmented input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 .segmented span {
-  display: flex; align-items: center; justify-content: center; height: 38px; padding: 0 12px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; min-height: 38px; height: 100%; padding: 4px 10px; cursor: pointer;
+  text-align: center; line-height: 1.2;
   border: 1px solid var(--border-strong); background: var(--surface); color: var(--text-2); font-size: 14px; font-weight: 500;
 }
 .segmented label:first-of-type span { border-radius: 6px 0 0 6px; }
@@ -315,6 +317,7 @@ form.inline select { width: auto; }
   .kpi-value { font-size: 17px; }
   .form-grid { grid-template-columns: minmax(0, 1fr); }
   .form-grid .wide { grid-column: auto; }
+  .segmented label { flex: 1 1 0; }
   .page-actions { width: 100%; }
   .page-actions .btn { flex: 1; }
 }

@@ -40,7 +40,7 @@
       <span class="readout-label">Profit</span>
       <span class="readout-value"><span id="profit">{{ money(p) }}</span> <span class="readout-pct" id="margin">{{ '(' ~ (mg|pct(0)) ~ ')' if mg is not none }}</span></span>
     </div>
-    <fieldset class="segmented">
+    <fieldset class="segmented wide">
       <legend>Job status</legend>
       {% set sg = editing.stage if editing else 'new' %}
       {% for value, label in stages.items() %}
@@ -117,7 +117,7 @@
     </tbody>
   </table>
   </div>
-  <p class="table-foot muted">Click a job status to move it along (New job → Pending → Done). Click a payment status to switch it between Paid and Not yet.</p>
+  <p class="table-foot muted">Click a job status to move it along (New job → Pending → Awaiting payment → Done). Click a payment status to switch it between Paid and Not yet.</p>
   {% else %}
     <p class="empty">No jobs found.</p>
   {% endif %}

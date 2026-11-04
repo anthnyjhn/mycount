@@ -325,7 +325,7 @@ def save_goals(year):
 # ---------- sales (jobs) ----------
 
 # Job status: what the form and table show, in the order a job goes through them
-STAGES = {"new": "New job", "pending": "Pending", "done": "Done"}
+STAGES = {"new": "New job", "pending": "Pending", "awaiting": "Awaiting payment", "done": "Done"}
 
 def next_job_number(db):
     """Guess the next job number from the last one typed: 7 -> 8, J-009 -> J-010."""
@@ -397,11 +397,14 @@ def toggle_sale(item_id):
 
 @app.post("/sales/<int:item_id>/stage")
 def next_stage(item_id):
-    """Move a job on to its next status: New job -> Pending -> Done -> New job."""
+    """Move a job on to its next status: New job -> Pending -> Awaiting payment -> Done -> New job."""
     db = get_db()
-    db.execute("UPDATE sales SET stage = CASE stage WHEN 'new' THEN 'pending' WHEN 'pending' THEN 'done' ELSE 'new' END "
-               "WHERE id = ?", (item_id,))
-    db.commit()
+    row = db.execute("SELECT stage FROM sales WHERE id = ?", (item_id,)).fetchone()
+    if row:
+        order = list(STAGES)
+        current = order.index(row["stage"]) if row["stage"] in order else -1
+        db.execute("UPDATE sales SET stage = ? WHERE id = ?", (order[(current + 1) % len(order)], item_id))
+        db.commit()
     return redirect(request.referrer or url_for("sales"))
 
 
@@ -613,7 +616,8 @@ EXPORTS = {
               "SELECT job_number, job_name, customer_name, date, quoted_price, expenses, "
               "quoted_price - expenses AS profit, "
               "CASE WHEN quoted_price > 0 THEN ROUND((quoted_price - expenses) * 100.0 / quoted_price, 1) END, "
-              "CASE stage WHEN 'new' THEN 'New job' WHEN 'pending' THEN 'Pending' ELSE 'Done' END, "
+              "CASE stage WHEN 'new' THEN 'New job' WHEN 'pending' THEN 'Pending' "
+              "WHEN 'awaiting' THEN 'Awaiting payment' ELSE 'Done' END, "
               "CASE status WHEN 'paid' THEN 'Paid' ELSE 'Not yet' END FROM sales ORDER BY date, id"),
     "purchases": ("Purchases", ["Supplier", "Product", "Amount", "Status", "Date"],
                   "SELECT supplier_name, product, amount, CASE status WHEN 'paid' THEN 'Paid' ELSE 'Unpaid' END, date "
